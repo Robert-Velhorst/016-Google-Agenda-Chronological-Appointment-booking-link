@@ -9,9 +9,9 @@ const { openDatabase } = require('../src/db');
 const { BookingService } = require('../src/booking-service');
 const { FakeCalendarProvider } = require('./fake-calendar-provider');
 
-function testRuntime() {
+function testRuntime(overrides = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'chronological-booking-'));
-  const config = loadConfig({ ADMIN_TOKEN:'a'.repeat(32), ENCRYPTION_KEY:'b'.repeat(64), DATABASE_PATH:path.join(directory,'test.sqlite'), BASE_URL:'http://localhost:8787', APP_ENV:'test', GOOGLE_CLIENT_ID:'test-client', GOOGLE_CLIENT_SECRET:'test-secret' });
+  const config = loadConfig({ ADMIN_TOKEN:'a'.repeat(32), ENCRYPTION_KEY:'b'.repeat(64), DATABASE_PATH:path.join(directory,'test.sqlite'), BASE_URL:'http://localhost:8787', APP_ENV:'test', GOOGLE_CLIENT_ID:'test-client', GOOGLE_CLIENT_SECRET:'test-secret', ...overrides });
   const db = openDatabase(config); const vault=createVault(config.encryptionKey); const provider=new FakeCalendarProvider(); const service=new BookingService({config,db,provider,vault});
   return {directory,config,db,vault,provider,service,cleanup(){db.close();fs.rmSync(directory,{recursive:true,force:true});}};
 }

@@ -1,38 +1,39 @@
-# Final Verification Report
+# Final verification report
 
-This file records evidence, not aspirations. It must be updated after the final clean run.
+Evidence recorded on 2026-08-09 for branch `main`.
 
-## Baseline
-
-- Branch: `main`
-- Starting commit: `c7c0d71`
-- Scope: existing Chrome extension plus new chronological booking service
-- Secret/TODO/dead-action scan: PASS; only the isolated test-provider URL matched
-- Application commit/push: `e5dca3e`, pushed to `main`
-
-## Automated verification
+## Automated and local acceptance
 
 | Check | Result |
 | --- | --- |
-| `npm run check` | PASS: 23 JavaScript files; manifest and icons valid |
-| `npm test` | PASS: 13 service/API/policy tests plus content-script tests |
-| `npm run build` | PASS: Vite production bundle; 219.97 kB JavaScript (68.27 kB gzip), 10.59 kB CSS |
+| `npm run check` | PASS: JavaScript syntax, manifest, and extension icons |
+| `npm test` | PASS: 20 backend/API/policy/provider tests plus the content-script suite |
+| `npm run build` | PASS: Vite 8 production build; 225.32 kB JS (69.55 kB gzip), 13.78 kB CSS |
 | `npm audit --audit-level=high` | PASS: 0 vulnerabilities |
-| `docker compose config --quiet` | PASS with explicit production variables |
-| Docker image build | BLOCKED: Docker Desktop client 29.6.2 is installed but the Linux engine pipe is not running |
-| Browser QA | PASS via Playwright fallback at 1280x720 and 390x844; no console errors |
-| Fresh-clone dry run | PASS at `e5dca3e`: clean canonical-remote clone, 13 tests plus extension tests, check and production build |
+| Windows 11 setup | PASS: fresh `npm ci`, secure `.env` creation, build, two migrations, and doctor |
+| Windows launcher | PASS: `start-windows.cmd` served `GET /healthz` with `{"status":"ok"}` |
+| Compose parsing | PASS: base stack and HAI overlay with explicit production variables |
+| Browser QA | PASS in the requested Codex in-app Browser; desktop slot selection and mobile step progression, no console warnings/errors |
+| HAI API | PASS: separate bearer authentication, owner-scoped cursor pagination, and secret-exclusion tests |
 
-## Browser evidence
+## Browser evidence and reference comparison
 
-The intended flow was operator sign-in -> operational dashboard -> requester selects a chronological slot -> reviews and confirms -> confirmation, plus settings -> emergency stop -> visible paused control. All actions passed against the test-only calendar provider. The in-app Browser plugin timed out twice during discovery before navigation, so the documented Playwright CLI fallback was used.
+The public booking page now uses the reference's white/cobalt three-step structure, calendar month grid, chronological time column, details/review card, manage-booking strip, and compact mobile stepper. The desktop flow updates the booking summary after selecting a time. At the mobile breakpoint only the current step is rendered, and both Next transitions were exercised. This progressive behavior is an intentional accessibility and small-screen simplification.
 
-Reference mismatch ledger:
+The Browser's standard screenshot call tiled desktop frames incorrectly; a clean developer-protocol capture proved the rendered mobile state. DOM snapshots, page identity, interaction state, and console logs remained healthy.
 
-- The operator screen preserves the concept's white/cobalt shell, availability grid, schedules/bookings tables, and exceptions rail. The shipped model intentionally omits invented providers and sample conflicts.
-- The requester screen preserves the three-step white/cobalt review flow and stacks cleanly on mobile. The concept's calendar picker is intentionally simplified to the native date input to reduce custom date-control risk.
-- The QA provider is explicitly isolated under `test/`; browser success is not presented as live Google acceptance.
+## Production controls verified in code/tests
 
-## Blocked live checks
+- Provider network timeouts, Google event pagination, refresh deduplication, and fail-closed result limits.
+- Short SQLite reservation transactions with provider calls outside transactions and deterministic reconciliation after ambiguous responses.
+- Cross-schedule overlap prevention, safe idempotent retry, ETag-aware updates/deletes, and emergency-stop reschedule protection.
+- HSTS on HTTPS, strict public-origin validation, dedicated HAI credentials, bounded feed pagination, and no management/OAuth secrets in HAI items.
+- Read-only container root, dropped capabilities, no-new-privileges, bounded processes/CPU/memory, writable owned data volume, and reduced Docker context.
 
-Real Google OAuth consent, FreeBusy, event creation, attendee delivery, reminder delivery, reschedule, and cancellation require operator-owned Google credentials and a disposable test calendar. These are explicitly **BLOCKED**, not passed.
+## External acceptance still blocked
+
+- Live Google OAuth consent, FreeBusy, event/attendee/reminder delivery, reschedule, and cancellation require owner-provided Google OAuth credentials and a disposable test calendar. The application reports provider-not-ready until that is completed.
+- Docker Compose files parse, but the local Docker daemon timed out on both the image build and a trivial container run while unrelated user containers were active. Docker Desktop was not restarted because that would disrupt those services.
+- ngrok 3.39.8 is installed and its configuration validates, but the account's configured endpoint is already online elsewhere (`ERR_NGROK_334`). The unrelated endpoint was not stopped and traffic was not pooled into this test app.
+
+No blocked item is presented as passed or production-live.

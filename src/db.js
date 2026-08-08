@@ -35,15 +35,17 @@ function runMigrations(db, directory) {
 
 function withImmediateTransaction(db, operation) {
   db.exec('BEGIN IMMEDIATE');
-  return Promise.resolve()
-    .then(operation)
-    .then((value) => {
-      db.exec('COMMIT');
-      return value;
-    }, (error) => {
-      db.exec('ROLLBACK');
-      throw error;
-    });
+  try {
+    const value = operation();
+    if (value && typeof value.then === 'function') {
+      throw new Error('Database transactions must not await network or other asynchronous work');
+    }
+    db.exec('COMMIT');
+    return value;
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
 }
 
 function audit(db, entry) {

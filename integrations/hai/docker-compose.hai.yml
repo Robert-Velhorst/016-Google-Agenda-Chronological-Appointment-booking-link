@@ -1,0 +1,23 @@
+services:
+  hai-connector:
+    build:
+      context: ../..
+      dockerfile: integrations/hai/Dockerfile
+    environment:
+      HAI_SOURCE_URL: http://booking:8787
+      HAI_CONNECTOR_TOKEN: ${HAI_CONNECTOR_TOKEN:?Set the same token as the booking service}
+      PROVIDER_TIMEOUT_MS: ${PROVIDER_TIMEOUT_MS:-10000}
+    depends_on:
+      booking:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 50
+    mem_limit: 96m
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8790/healthz').then(r=>{if(!r.ok)process.exit(1)})"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

@@ -45,7 +45,7 @@ test('separate schedules sharing one calendar cannot overlap', async (t) => {
   );
 });
 
-test('provider create failure rolls back pending local booking', async (t) => {
+test('provider create failure keeps one recoverable reservation', async (t) => {
   const runtime=testRuntime(); t.after(()=>runtime.cleanup());
   const schedule=runtime.service.createSchedule(defaultSchedule(),'create');
   await runtime.service.setScheduleStatus(schedule.id,'active','activate');
@@ -54,7 +54,56 @@ test('provider create failure rolls back pending local booking', async (t) => {
   runtime.provider.failCreate=true;
   await assert.rejects(
     ()=>runtime.service.book(schedule.slug,{name:'Ada Example',email:'ada@example.com',duration:30,start:slot.start},'idempotency-key-failure-01','book'),
-    /provider unavailable/
+    (error)=>error.code==='GOOGLE_PROVIDER_ERROR'&&error.retryable
   );
-  assert.equal(runtime.service.listBookings().length,0);
+  assert.equal(runtime.service.listBookings().length,1);
+  assert.equal(runtime.service.listBookings()[0].status,'pending');
+  runtime.provider.failCreate=false;
+  const recovered=await runtime.service.book(schedule.slug,{name:'Ada Example',email:'ada@example.com',duration:30,start:slot.start},'idempotency-key-failure-01','retry');
+  assert.equal(recovered.status,'confirmed');
+  assert.equal(runtime.service.listBookings().length,1);
+});
+
+test('an ambiguous provider create is reconciled without a duplicate event', async (t) => {
+  const runtime=testRuntime(); t.after(()=>runtime.cleanup());
+  const schedule=runtime.service.createSchedule(defaultSchedule(),'create');
+  await runtime.service.setScheduleStatus(schedule.id,'active','activate');
+  const date=futureDate(9); const [slot]=await runtime.service.slots(schedule.slug,30,date,date);
+  runtime.provider.storeThenFail=true;
+  await assert.rejects(
+    ()=>runtime.service.book(schedule.slug,{name:'Ada Example',email:'ada@example.com',duration:30,start:slot.start},'idempotency-key-ambiguous-01','book'),
+    (error)=>error.code==='GOOGLE_PROVIDER_ERROR'&&error.retryable
+  );
+  const recovered=await runtime.service.book(schedule.slug,{name:'Ada Example',email:'ada@example.com',duration:30,start:slot.start},'idempotency-key-ambiguous-01','retry');
+  assert.equal(recovered.status,'confirmed');
+  assert.equal(runtime.provider.created,1);
+  assert.equal(runtime.provider.events.size,1);
+});
+
+test('concurrent requests reserve locally without nested SQLite transactions', async (t) => {
+  const runtime=testRuntime(); t.after(()=>runtime.cleanup());
+  const schedule=runtime.service.createSchedule(defaultSchedule(),'create');
+  await runtime.service.setScheduleStatus(schedule.id,'active','activate');
+  const date=futureDate(11); const [slot]=await runtime.service.slots(schedule.slug,30,date,date);
+  runtime.provider.createDelayMs=50;
+  const attempts=await Promise.allSettled([
+    runtime.service.book(schedule.slug,{name:'Ada Example',email:'ada@example.com',duration:30,start:slot.start},'idempotency-key-concurrent-01','book-one'),
+    runtime.service.book(schedule.slug,{name:'Grace Example',email:'grace@example.com',duration:30,start:slot.start},'idempotency-key-concurrent-02','book-two')
+  ]);
+  assert.equal(attempts.filter((item)=>item.status==='fulfilled').length,1);
+  const rejected=attempts.find((item)=>item.status==='rejected');
+  assert.equal(rejected.reason.code,'SLOT_UNAVAILABLE');
+  assert.equal(runtime.provider.created,1);
+});
+
+test('idempotency key reuse with different details is rejected', async (t) => {
+  const runtime=testRuntime(); t.after(()=>runtime.cleanup());
+  const schedule=runtime.service.createSchedule(defaultSchedule(),'create');
+  await runtime.service.setScheduleStatus(schedule.id,'active','activate');
+  const date=futureDate(12); const slots=await runtime.service.slots(schedule.slug,30,date,date);
+  await runtime.service.book(schedule.slug,{name:'Ada Example',email:'ada@example.com',duration:30,start:slots[0].start},'idempotency-key-reuse-0001','book');
+  await assert.rejects(
+    ()=>runtime.service.book(schedule.slug,{name:'Different Person',email:'different@example.com',duration:30,start:slots[1].start},'idempotency-key-reuse-0001','reuse'),
+    (error)=>error.code==='IDEMPOTENCY_CONFLICT'
+  );
 });

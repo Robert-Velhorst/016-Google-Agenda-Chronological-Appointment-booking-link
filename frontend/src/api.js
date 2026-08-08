@@ -21,8 +21,8 @@ export async function request(path, options = {}, token = '') {
   return payload;
 }
 
-export function formatDateTime(value, locale = 'en') {
+export function formatDateTime(value, locale = 'en', timeZone = undefined) {
   return new Intl.DateTimeFormat(locale === 'nl' ? 'nl-NL' : 'en-GB', {
-    dateStyle: 'medium', timeStyle: 'short'
+    dateStyle: 'medium', timeStyle: 'short', ...(timeZone ? { timeZone } : {})
   }).format(new Date(value));
 }

@@ -16,13 +16,14 @@ function sendJson(res, status, body, headers = {}) {
   res.end(text);
 }
 
-function securityHeaders(res, requestId) {
+function securityHeaders(res, requestId, config) {
   res.setHeader('x-request-id', requestId);
   res.setHeader('x-content-type-options', 'nosniff');
   res.setHeader('x-frame-options', 'DENY');
   res.setHeader('referrer-policy', 'no-referrer');
   res.setHeader('permissions-policy', 'camera=(), microphone=(), geolocation=()');
   res.setHeader('content-security-policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+  if (new URL(config.baseUrl).protocol === 'https:') res.setHeader('strict-transport-security', 'max-age=31536000; includeSubDomains');
 }
 
 async function readJson(req, limit = 65536) {
@@ -47,9 +48,15 @@ function createApp({ config, service, provider }) {
     if (!safeEqual(token, config.adminToken)) throw new AppError('UNAUTHORIZED', 'Operator authentication is required.', 401);
   }
 
+  function hai(req) {
+    if (!config.haiConnectorToken) throw new AppError('HAI_NOT_CONFIGURED', 'The HAI connector is not configured.', 503);
+    const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    if (!safeEqual(token, config.haiConnectorToken)) throw new AppError('UNAUTHORIZED', 'HAI connector authentication is required.', 401);
+  }
+
   async function handler(req, res) {
     const requestId = crypto.randomUUID();
-    securityHeaders(res, requestId);
+    securityHeaders(res, requestId, config);
     try {
       const url = new URL(req.url, config.baseUrl);
       const isAdmin = url.pathname.startsWith('/api/admin');
@@ -65,6 +72,14 @@ function createApp({ config, service, provider }) {
         const status = service.status();
         const ready = !status.emergencyStop && status.google.connected;
         return sendJson(res, ready ? 200 : 503, { status: status.emergencyStop ? 'paused' : ready ? 'ready' : 'provider_not_ready', ...status });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/integrations/hai/status') {
+        hai(req);
+        return sendJson(res, 200, { configured: true, authority: 'read_only', schemaVersion: 1 });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/integrations/hai/feed') {
+        hai(req);
+        return sendJson(res, 200, service.haiFeed(url.searchParams.get('cursor') || '', url.searchParams.get('limit')));
       }
       if (req.method === 'GET' && url.pathname === '/oauth/google/callback') {
         if (url.searchParams.get('error')) throw new AppError('GOOGLE_CONSENT_DENIED', 'Google authorization was not completed.', 400);

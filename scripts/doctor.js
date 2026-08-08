@@ -11,7 +11,8 @@ function add(name, ok, detail, required = true) { checks.push({ name, ok, detail
 try {
   const config = loadConfig();
   add('configuration', true, `${config.appEnv} at ${config.baseUrl}`);
-  add('node', Number(process.versions.node.split('.')[0]) >= 22, process.versions.node);
+  const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
+  add('node', nodeMajor > 24 || (nodeMajor === 24 && nodeMinor >= 15), `${process.versions.node}; requires 24.15 or newer`);
   add('frontend build', fs.existsSync(path.resolve(__dirname, '..', 'dist', 'index.html')), 'run npm run build when missing', false);
   add('Google OAuth', config.googleConfigured, config.googleConfigured ? 'credentials present' : 'not configured; booking mutations disabled', false);
   add('encryption', createVault(config.encryptionKey).available, 'required for OAuth tokens and manage-token recovery');

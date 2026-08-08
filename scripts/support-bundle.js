@@ -7,7 +7,7 @@ const { openDatabase } = require('../src/db');
 
 const config = loadConfig();
 const db = openDatabase(config);
-const output = path.resolve(`./support-bundles/support-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+const output = path.join(path.dirname(config.databasePath), 'support-bundles', `support-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
 fs.mkdirSync(path.dirname(output), { recursive: true });
 const bundle = {
   generatedAt: new Date().toISOString(),

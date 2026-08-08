@@ -8,7 +8,7 @@ The code and test provider critical path are implemented. Live Google Calendar o
 
 ## Local setup
 
-1. Install Node.js 24 or newer and run `npm ci`.
+1. Install Node.js 24.15 or newer and run `npm ci`.
 2. Copy `.env.example` to `.env`.
 3. Generate `ADMIN_TOKEN` and `ENCRYPTION_KEY` with the commands shown in `.env.example`.
 4. Configure a Google OAuth web client with redirect URI `http://localhost:8787/oauth/google/callback` and add its client ID/secret.
@@ -16,6 +16,14 @@ The code and test provider critical path are implemented. Live Google Calendar o
 6. Open `http://localhost:8787`, enter the operator token, connect Google Calendar, create a draft schedule, and activate it after calendar verification.
 
 The HTTP server binds to `127.0.0.1` in development. Production requires `BASE_URL=https://...`; set `HOST=0.0.0.0` behind a TLS reverse proxy.
+
+### Windows 11 standalone
+
+Run `powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows.ps1` once, then launch with `start-windows.cmd`. The setup script creates strong local secrets only when `.env` does not exist and preserves existing configuration. For an ngrok endpoint, configure ngrok first and run `powershell -File .\scripts\start-ngrok.ps1 -PublicUrl https://your-static-domain.example`.
+
+### HAI connector
+
+Set the same strong `HAI_CONNECTOR_TOKEN` for the booking service and the companion in `integrations/hai`. The companion converts the authenticated booking feed into HAI's existing `json-feed` input without storing the bearer token in HAI or in a URL. See `integrations/hai/README.md`.
 
 ## Chrome appointment-choice sorter
 
@@ -33,11 +41,11 @@ The original Manifest V3 extension remains available as a separate, local browse
 ## Safety model
 
 - Calendar writes require a connected Google account and an active schedule.
-- A SQLite `BEGIN IMMEDIATE` transaction serializes local overlap checks and provider mutation per instance.
+- Short SQLite `BEGIN IMMEDIATE` transactions serialize local reservations; network calls happen outside database transactions and are reconciled by deterministic event IDs.
 - The event ID is deterministic per schedule/idempotency key, preventing duplicate retry events.
 - Google availability is rechecked at confirmation and reschedule.
 - DST gaps and ambiguous fold times are rejected rather than silently shifted.
 - OAuth and manage-token recovery data use AES-256-GCM; public manage tokens are hashed for verification and placed in URL fragments, not server request URLs.
-- Emergency stop blocks new slot discovery and booking while preserving existing events.
+- Emergency stop blocks new slot discovery, booking, and rescheduling while preserving cancellation access to existing events.
 
 See `docs/OPERATOR_RUNBOOK.md`, `docs/SECURITY.md`, and `docs/FINAL_VERIFICATION_REPORT.md` before deployment.

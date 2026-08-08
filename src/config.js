@@ -36,7 +36,11 @@ function loadConfig(overrides = {}) {
     trustProxy: env.TRUST_PROXY === 'true',
     rateLimitWindowMs: integer('RATE_LIMIT_WINDOW_MS', env.RATE_LIMIT_WINDOW_MS, 60000, 1000),
     rateLimitPublic: integer('RATE_LIMIT_PUBLIC', env.RATE_LIMIT_PUBLIC, 60, 1),
-    rateLimitAdmin: integer('RATE_LIMIT_ADMIN', env.RATE_LIMIT_ADMIN, 120, 1)
+    rateLimitAdmin: integer('RATE_LIMIT_ADMIN', env.RATE_LIMIT_ADMIN, 120, 1),
+    providerTimeoutMs: integer('PROVIDER_TIMEOUT_MS', env.PROVIDER_TIMEOUT_MS, 10000, 1000),
+    haiConnectorToken: env.HAI_CONNECTOR_TOKEN || '',
+    haiConnectorProjectKey: String(env.HAI_CONNECTOR_PROJECT_KEY || '016-Google-Agenda').trim().slice(0, 120),
+    haiConnectorMaxItems: integer('HAI_CONNECTOR_MAX_ITEMS', env.HAI_CONNECTOR_MAX_ITEMS, 100, 1)
   };
 
   if (config.adminToken.length < 24) throw new Error('ADMIN_TOKEN must be at least 24 characters');
@@ -49,6 +53,19 @@ function loadConfig(overrides = {}) {
   if (appEnv === 'production' && new URL(config.baseUrl).protocol !== 'https:') {
     throw new Error('BASE_URL must use HTTPS in production');
   }
+  const publicUrl = new URL(config.baseUrl);
+  if (publicUrl.username || publicUrl.password || publicUrl.search || publicUrl.hash || publicUrl.pathname !== '/') {
+    throw new Error('BASE_URL must be an origin without credentials, path, query, or fragment');
+  }
+  const redirectUrl = new URL(config.googleRedirectUri);
+  if (googleConfigured && redirectUrl.origin !== publicUrl.origin) {
+    throw new Error('GOOGLE_REDIRECT_URI must use the same origin as BASE_URL');
+  }
+  if (config.haiConnectorToken && config.haiConnectorToken.length < 32) {
+    throw new Error('HAI_CONNECTOR_TOKEN must be at least 32 characters when configured');
+  }
+  if (!config.haiConnectorProjectKey) throw new Error('HAI_CONNECTOR_PROJECT_KEY must not be empty');
+  if (config.haiConnectorMaxItems > 500) throw new Error('HAI_CONNECTOR_MAX_ITEMS must be <= 500');
   return Object.freeze(config);
 }
 

@@ -1,9 +1,14 @@
 .git
 .github
+.env
+.playwright-cli
 node_modules
+dist
 data
 backups
 support-bundles
-.env
-.playwright-cli
 work
+*.zip
+*.sqlite
+*.sqlite-*
+npm-debug.log*

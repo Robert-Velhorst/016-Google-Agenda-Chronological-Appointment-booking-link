@@ -19,6 +19,20 @@ class GoogleCalendarProvider {
     this.db = db;
     this.vault = vault;
     this.fetch = fetchImpl;
+    this.refreshes = new Map();
+  }
+
+  async fetchRequest(url, options = {}) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.config.providerTimeoutMs);
+    try {
+      return await this.fetch(url, { ...options, signal: options.signal || controller.signal });
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new AppError('GOOGLE_NETWORK_ERROR', 'Google Calendar did not respond. The action was not confirmed and can be retried safely.', 502, true);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   configured() {
@@ -60,7 +74,7 @@ class GoogleCalendarProvider {
     const row = this.db.prepare('SELECT * FROM oauth_states WHERE state_hash = ?').get(tokenHash(state));
     if (!row || row.expires_at <= new Date().toISOString()) throw new AppError('INVALID_OAUTH_STATE', 'The Google authorization request expired or is invalid.', 400);
     this.db.prepare('DELETE FROM oauth_states WHERE state_hash = ?').run(tokenHash(state));
-    const response = await this.fetch('https://oauth2.googleapis.com/token', {
+    const response = await this.fetchRequest('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -90,7 +104,7 @@ class GoogleCalendarProvider {
       const tokens = JSON.parse(this.vault.decrypt(row.encrypted_tokens));
       const token = tokens.refresh_token || tokens.access_token;
       if (token) {
-        const response = await this.fetch('https://oauth2.googleapis.com/revoke', {
+        const response = await this.fetchRequest('https://oauth2.googleapis.com/revoke', {
           method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token })
         });
         if (!response.ok && response.status !== 400) throw providerError('Google access could not be revoked.', response.status, await response.text());
@@ -106,7 +120,16 @@ class GoogleCalendarProvider {
     const tokens = JSON.parse(this.vault.decrypt(row.encrypted_tokens));
     if (row.expires_at && new Date(row.expires_at).getTime() > Date.now() + 60000) return tokens.access_token;
     if (!tokens.refresh_token) throw new AppError('GOOGLE_REAUTH_REQUIRED', 'Google authorization expired and must be renewed.', 503);
-    const response = await this.fetch('https://oauth2.googleapis.com/token', {
+    if (this.refreshes.has(ownerId)) return this.refreshes.get(ownerId);
+    const refresh = this.refreshAccessToken(ownerId, tokens).finally(() => {
+      if (this.refreshes.get(ownerId) === refresh) this.refreshes.delete(ownerId);
+    });
+    this.refreshes.set(ownerId, refresh);
+    return refresh;
+  }
+
+  async refreshAccessToken(ownerId, tokens) {
+    const response = await this.fetchRequest('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -130,7 +153,7 @@ class GoogleCalendarProvider {
 
   async request(ownerId, url, options = {}) {
     const token = await this.accessToken(ownerId);
-    const response = await this.fetch(url, {
+    const response = await this.fetchRequest(url, {
       ...options,
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...(options.headers || {}) }
     });
@@ -161,9 +184,23 @@ class GoogleCalendarProvider {
 
   async conflicts(ownerId, calendarId, start, end, excludeEventId = null) {
     const url = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`);
-    url.search = new URLSearchParams({ timeMin: start, timeMax: end, singleEvents: 'true', maxResults: '50' }).toString();
-    const { data } = await this.request(ownerId, url.toString());
-    return (data.items || []).filter((event) => event.id !== excludeEventId && event.status !== 'cancelled' && event.transparency !== 'transparent');
+    const events = [];
+    let pageToken = '';
+    for (let page = 0; page < 10; page += 1) {
+      url.search = new URLSearchParams({
+        timeMin: start,
+        timeMax: end,
+        singleEvents: 'true',
+        showDeleted: 'false',
+        maxResults: '2500',
+        ...(pageToken ? { pageToken } : {})
+      }).toString();
+      const { data } = await this.request(ownerId, url.toString());
+      events.push(...(data.items || []));
+      pageToken = data.nextPageToken || '';
+      if (!pageToken) return events.filter((event) => event.id !== excludeEventId && event.status !== 'cancelled' && event.transparency !== 'transparent');
+    }
+    throw new AppError('GOOGLE_RESULT_LIMIT', 'Google Calendar returned too many overlapping events to verify this slot safely.', 502, true);
   }
 
   async createEvent(ownerId, calendarId, eventId, booking, schedule, manageUrl) {
