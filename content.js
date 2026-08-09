@@ -58,14 +58,16 @@
     const noDuration = normalized.match(/\bNO\s*(\d+(?:[.,]\d+)?)\b/i);
     if (noDuration) return Number(noDuration[1].replace(',', '.'));
 
+    const hours = normalized.match(/\b(\d+(?:[.,]\d+)?)\s*(?:hours?|uren|uur|hrs?|hr|h)\b/i);
     const minutes = normalized.match(/\b(\d+(?:[.,]\d+)?)\s*(?:minutes?|minuten|mins?|min)\b/i);
-    if (minutes) return Number(minutes[1].replace(',', '.'));
-
     const compactMinutes = normalized.match(/\b(\d+(?:[.,]\d+)?)m\b/i);
-    if (compactMinutes) return Number(compactMinutes[1].replace(',', '.'));
+    const minuteValue = minutes || compactMinutes
+      ? Number((minutes || compactMinutes)[1].replace(',', '.'))
+      : 0;
+    if (hours) return Number(hours[1].replace(',', '.')) * 60 + minuteValue;
+    if (minutes || compactMinutes) return minuteValue;
 
-    const hours = normalized.match(/\b(\d+(?:[.,]\d+)?)\s*(?:hours?|uren|uur|hr|h)\b/i);
-    return hours ? Number(hours[1].replace(',', '.')) * 60 : Number.POSITIVE_INFINITY;
+    return Number.POSITIVE_INFINITY;
   }
 
   function extractDuration(item) {
@@ -147,11 +149,18 @@
   function startObserver() {
     observer = new MutationObserver((mutations) => {
       if (paused) return;
-      if (mutations.some((mutation) => mutation.type === 'childList' && (mutation.addedNodes.length || mutation.removedNodes.length))) {
+      if (mutations.some((mutation) => mutation.type === 'characterData' || mutation.type === 'attributes' ||
+        (mutation.type === 'childList' && (mutation.addedNodes.length || mutation.removedNodes.length)))) {
         scheduleSort();
       }
     });
-    observer.observe(document.documentElement, { childList: true, subtree: true });
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['class', 'aria-label', ...DURATION_ATTRIBUTE_NAMES]
+    });
   }
 
   function init() {

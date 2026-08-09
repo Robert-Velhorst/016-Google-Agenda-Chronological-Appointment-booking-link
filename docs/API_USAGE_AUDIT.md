@@ -19,6 +19,7 @@
 | `POST /api/admin/google/start` | Operator UI | Bearer token | Creates OAuth authorization URL |
 | `POST /api/admin/google/disconnect` | Operator UI | Bearer token | Revokes token best-effort, removes local connection |
 | `POST /api/admin/emergency-stop` | Operator UI | Bearer token | Stops/resumes public mutations |
+| `POST /api/admin/reconcile` | Operator UI | Bearer token | Read-only Google lookup repairs old uncertain reservations |
 | `GET /api/admin/export` | Operator UI | Bearer token | Downloads local JSON export |
 | `DELETE /api/admin/data` | Operator UI | Bearer token plus explicit phrase/ack | Deletes local product data, not Google events |
 

@@ -10,6 +10,12 @@ const { generateCandidateSlots, parseSchedule, validateRequestedSlot, validateSc
 function id() { return crypto.randomUUID(); }
 function now() { return new Date().toISOString(); }
 function eventTime(value) { return typeof value === 'string' ? value : value?.dateTime; }
+function conflictWindow(schedule, startAt, endAt) {
+  return {
+    start: Temporal.Instant.from(startAt).subtract({ minutes: schedule.buffer_after_minutes }).toString(),
+    end: Temporal.Instant.from(endAt).add({ minutes: schedule.buffer_before_minutes }).toString()
+  };
+}
 function encodeCursor(row) { return Buffer.from(JSON.stringify({ updatedAt: row.updated_at, id: row.id })).toString('base64url'); }
 function decodeCursor(value) {
   if (!value) return { updatedAt: '1970-01-01T00:00:00.000Z', id: '' };
@@ -23,7 +29,7 @@ function decodeCursor(value) {
 }
 function slug(name) {
   const stem = name.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48) || 'schedule';
-  return `${stem}-${crypto.randomBytes(4).toString('hex')}`;
+  return `${stem}-${crypto.randomBytes(12).toString('hex')}`;
 }
 function publicSchedule(schedule) {
   return {
@@ -59,7 +65,7 @@ class BookingService {
       appEnv: this.config.appEnv,
       emergencyStop: this.emergencyStopped(),
       google: this.provider.connectionStatus(this.config.ownerId),
-      hai: { configured: Boolean(this.config.haiConnectorToken), mode: 'read_only_feed' },
+      hai: { configured: Boolean(this.config.haiConnectorToken), mode: 'read_only_feed', includesPii: this.config.haiConnectorIncludePii },
       database: 'ready',
       publicBaseUrl: this.config.baseUrl
     };
@@ -111,21 +117,45 @@ class BookingService {
   async slots(scheduleSlug, duration, fromDate, toDate) {
     if (this.emergencyStopped()) throw new AppError('BOOKING_PAUSED', 'Bookings are temporarily paused by the operator.', 503, true);
     const schedule = this.scheduleBySlug(scheduleSlug);
-    const startDate = Temporal.PlainDate.from(fromDate);
-    const endDate = Temporal.PlainDate.from(toDate);
+    let startDate;
+    let endDate;
+    try {
+      startDate = Temporal.PlainDate.from(fromDate);
+      endDate = Temporal.PlainDate.from(toDate);
+    } catch {
+      throw new AppError('INVALID_DATE_RANGE', 'Slot dates must be valid ISO calendar dates.', 422);
+    }
     if (startDate.until(endDate).days < 0 || startDate.until(endDate).days > 31) throw new AppError('INVALID_DATE_RANGE', 'Slot searches are limited to 31 days.', 422);
     const start = startDate.toZonedDateTime({ timeZone: schedule.timezone, plainTime: '00:00' }).toInstant();
     const end = endDate.add({ days: 1 }).toZonedDateTime({ timeZone: schedule.timezone, plainTime: '00:00' }).toInstant();
-    const busy = await this.provider.busy(schedule.owner_id, schedule.calendar_id, start.toString(), end.toString(), schedule.timezone);
-    return generateCandidateSlots(schedule, Number(duration), fromDate, toDate, busy);
+    const [providerBusy, localBusy] = await Promise.all([
+      this.provider.busy(schedule.owner_id, schedule.calendar_id, start.toString(), end.toString(), schedule.timezone),
+      Promise.resolve(this.localBusy(schedule, start.toString(), end.toString()))
+    ]);
+    return generateCandidateSlots(schedule, Number(duration), fromDate, toDate, [...providerBusy, ...localBusy]);
+  }
+
+  localBusy(schedule, startAt, endAt) {
+    const window = conflictWindow(schedule, startAt, endAt);
+    const rows = this.db.prepare(`SELECT b.start_at, b.end_at, b.reserved_start_at, b.reserved_end_at
+      FROM bookings b JOIN schedules s ON s.id=b.schedule_id
+      WHERE s.owner_id=? AND s.calendar_id=? AND b.status IN ('pending','confirmed')
+      AND ((b.start_at < ? AND b.end_at > ?)
+        OR (b.reserved_start_at IS NOT NULL AND b.reserved_start_at < ? AND b.reserved_end_at > ?))`)
+      .all(schedule.owner_id, schedule.calendar_id, window.end, window.start, window.end, window.start);
+    return rows.flatMap((row) => [
+      { start: row.start_at, end: row.end_at },
+      ...(row.reserved_start_at ? [{ start: row.reserved_start_at, end: row.reserved_end_at }] : [])
+    ]);
   }
 
   localConflict(schedule, startAt, endAt, excludeBookingId = null) {
+    const window = conflictWindow(schedule, startAt, endAt);
     return this.db.prepare(`SELECT id FROM bookings
       WHERE schedule_id IN (SELECT id FROM schedules WHERE owner_id=? AND calendar_id=?)
       AND status IN ('pending','confirmed')
       AND ((start_at < ? AND end_at > ?) OR (reserved_start_at IS NOT NULL AND reserved_start_at < ? AND reserved_end_at > ?))
-      AND (? IS NULL OR id <> ?) LIMIT 1`).get(schedule.owner_id, schedule.calendar_id, endAt, startAt, endAt, startAt, excludeBookingId, excludeBookingId);
+      AND (? IS NULL OR id <> ?) LIMIT 1`).get(schedule.owner_id, schedule.calendar_id, window.end, window.start, window.end, window.start, excludeBookingId, excludeBookingId);
   }
 
   async book(scheduleSlug, input, idempotencyKey, requestId) {
@@ -168,7 +198,8 @@ class BookingService {
   }
 
   markProviderFailure(bookingId, error, requestId, ownerId) {
-    const retryable = Boolean(error.retryable || error.providerStatus === 429 || error.providerStatus >= 500 || !error.providerStatus);
+    const retryable = Boolean(error.retryable || error.providerStatus === 429 || error.providerStatus >= 500 ||
+      (!(error instanceof AppError) && !error.providerStatus));
     const status = retryable ? 'pending' : 'failed';
     const code = error.code || 'GOOGLE_PROVIDER_ERROR';
     withImmediateTransaction(this.db, () => {
@@ -193,7 +224,8 @@ class BookingService {
     }
     if (!event) {
       try {
-        const remoteConflicts = await this.provider.conflicts(schedule.owner_id, schedule.calendar_id, booking.start_at, booking.end_at, eventId);
+        const window = conflictWindow(schedule, booking.start_at, booking.end_at);
+        const remoteConflicts = await this.provider.conflicts(schedule.owner_id, schedule.calendar_id, window.start, window.end, eventId);
         if (remoteConflicts.length) throw new AppError('SLOT_UNAVAILABLE', 'That time is no longer available in Google Calendar.', 409);
         try {
           event = await this.provider.createEvent(schedule.owner_id, schedule.calendar_id, eventId, booking, schedule, manageUrl);
@@ -289,7 +321,8 @@ class BookingService {
         .run(slot.start, slot.end, now(), bookingId);
     });
     try {
-      const conflicts = await this.provider.conflicts(managed.schedule.owner_id, managed.schedule.calendar_id, slot.start, slot.end, managed.row.google_event_id);
+      const window = conflictWindow(managed.schedule, slot.start, slot.end);
+      const conflicts = await this.provider.conflicts(managed.schedule.owner_id, managed.schedule.calendar_id, window.start, window.end, managed.row.google_event_id);
       if (conflicts.length) throw new AppError('SLOT_UNAVAILABLE', 'That time is no longer available in Google Calendar.', 409);
       const nextBooking = { ...managed.row, start_at: slot.start, end_at: slot.end };
       let event = null;
@@ -326,13 +359,23 @@ class BookingService {
     }
   }
 
-  listBookings() {
-    return this.db.prepare(`SELECT b.*, s.name AS schedule_name, s.slug AS schedule_slug
-      FROM bookings b JOIN schedules s ON s.id=b.schedule_id WHERE s.owner_id=? ORDER BY b.start_at DESC LIMIT 500`).all(this.config.ownerId);
+  listBookings(limit = 500) {
+    const sql = `SELECT b.id, b.schedule_id, b.requester_name, b.requester_email, b.start_at, b.end_at,
+      b.status, b.provider_status, b.error_code, b.created_at, b.updated_at,
+      s.name AS schedule_name, s.slug AS schedule_slug, s.timezone AS schedule_timezone
+      FROM bookings b JOIN schedules s ON s.id=b.schedule_id
+      WHERE s.owner_id=? ORDER BY b.start_at DESC${limit === null ? '' : ' LIMIT ?'}`;
+    return limit === null
+      ? this.db.prepare(sql).all(this.config.ownerId)
+      : this.db.prepare(sql).all(this.config.ownerId, Math.min(500, Math.max(1, Number(limit) || 500)));
   }
 
-  auditLog() {
-    return this.db.prepare('SELECT * FROM audit_logs WHERE owner_id=? OR owner_id IS NULL ORDER BY id DESC LIMIT 500').all(this.config.ownerId)
+  auditLog(limit = 500) {
+    const sql = `SELECT * FROM audit_logs WHERE owner_id=? OR owner_id IS NULL ORDER BY id DESC${limit === null ? '' : ' LIMIT ?'}`;
+    const rows = limit === null
+      ? this.db.prepare(sql).all(this.config.ownerId)
+      : this.db.prepare(sql).all(this.config.ownerId, Math.min(500, Math.max(1, Number(limit) || 500)));
+    return rows
       .map((row) => ({ ...row, details: JSON.parse(row.details_json) }));
   }
 
@@ -342,8 +385,48 @@ class BookingService {
     return { enabled: this.emergencyStopped() };
   }
 
+  async reconcilePendingBookings(requestId) {
+    const cutoff = new Date(Date.now() - this.config.reconcileMinAgeMs).toISOString();
+    const rows = this.db.prepare(`SELECT b.*, s.owner_id, s.calendar_id
+      FROM bookings b JOIN schedules s ON s.id=b.schedule_id
+      WHERE s.owner_id=? AND b.status='pending' AND b.updated_at<=?
+      ORDER BY b.updated_at ASC LIMIT 25`).all(this.config.ownerId, cutoff);
+    const result = { checked: rows.length, confirmed: 0, released: 0, unresolved: 0 };
+    for (const booking of rows) {
+      const eventId = googleEventId(`${booking.schedule_id}:${booking.idempotency_key}`);
+      let event;
+      try {
+        event = await this.provider.getEvent(booking.owner_id, booking.calendar_id, eventId);
+      } catch (error) {
+        if (error.providerStatus !== 404) { result.unresolved += 1; continue; }
+        const released = withImmediateTransaction(this.db, () => {
+          const current = this.db.prepare('SELECT status, updated_at FROM bookings WHERE id=?').get(booking.id);
+          if (!current || current.status !== 'pending' || current.updated_at !== booking.updated_at) return false;
+          this.db.prepare("UPDATE bookings SET status='failed', provider_status='not_created', error_code='GOOGLE_EVENT_NOT_FOUND', updated_at=? WHERE id=?")
+            .run(now(), booking.id);
+          audit(this.db, { ownerId: booking.owner_id, actorType: 'operator', action: 'booking.reconciled_released', entityType: 'booking', entityId: booking.id, requestId, details: { providerStatus: 404 } });
+          return true;
+        });
+        if (released) result.released += 1;
+        else result.unresolved += 1;
+        continue;
+      }
+      const confirmed = withImmediateTransaction(this.db, () => {
+        const current = this.db.prepare('SELECT status FROM bookings WHERE id=?').get(booking.id);
+        if (!current || current.status !== 'pending') return false;
+        this.db.prepare("UPDATE bookings SET status='confirmed', provider_status='reconciled', google_event_id=?, google_etag=?, error_code=NULL, updated_at=? WHERE id=?")
+          .run(event.id, event.etag || null, now(), booking.id);
+        audit(this.db, { ownerId: booking.owner_id, actorType: 'operator', action: 'booking.reconciled_confirmed', entityType: 'booking', entityId: booking.id, requestId, details: {} });
+        return true;
+      });
+      if (confirmed) result.confirmed += 1;
+      else result.unresolved += 1;
+    }
+    return result;
+  }
+
   exportData() {
-    return { exportedAt: now(), owner: { id: this.config.ownerId, email: this.config.ownerEmail }, schedules: this.listSchedules(), bookings: this.listBookings(), audit: this.auditLog() };
+    return { exportedAt: now(), owner: { id: this.config.ownerId, email: this.config.ownerEmail }, schedules: this.listSchedules(), bookings: this.listBookings(null), audit: this.auditLog(null) };
   }
 
   haiFeed(cursorText, requestedLimit) {
@@ -366,13 +449,13 @@ class BookingService {
         `Starts: ${row.start_at}.`,
         `Ends: ${row.end_at}.`,
         `Time zone: ${row.schedule_timezone}.`,
-        `Requester: ${row.requester_name} <${row.requester_email}>.`,
+        ...(this.config.haiConnectorIncludePii ? [`Requester: ${row.requester_name} <${row.requester_email}>.`] : []),
         `Provider state: ${row.provider_status}.`
       ].join(' '),
       sourceUri: `${this.config.baseUrl}/book/${encodeURIComponent(row.schedule_slug)}`,
       itemType: 'calendar_booking',
       projectKey: this.config.haiConnectorProjectKey,
-      metadata: JSON.stringify({ status: row.status, providerStatus: row.provider_status, start: row.start_at, end: row.end_at, timezone: row.schedule_timezone, updatedAt: row.updated_at })
+      metadata: JSON.stringify({ status: row.status, providerStatus: row.provider_status, start: row.start_at, end: row.end_at, timezone: row.schedule_timezone, updatedAt: row.updated_at, ...(this.config.haiConnectorIncludePii ? { requesterName: row.requester_name, requesterEmail: row.requester_email } : {}) })
     }));
     return {
       connector: 'chronological-booking',

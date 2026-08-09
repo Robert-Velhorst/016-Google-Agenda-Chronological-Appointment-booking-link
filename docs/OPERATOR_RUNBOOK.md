@@ -16,7 +16,7 @@ Settings → “Stop new bookings” blocks slot search and booking confirmation
 
 - Do not tell requesters a booking succeeded unless the app shows confirmed.
 - For retryable Google 429/5xx errors, retain the same browser attempt so the same idempotency key is reused.
-- For an ambiguous event, search Google Calendar using the booking reference/event ID before manual mutation.
+- For an ambiguous event older than the configured reconciliation age, use **Reconcile uncertain bookings**. It only looks up deterministic event IDs: a found event is confirmed, a definitive 404 releases the local reservation, and transient provider failures remain unresolved.
 - Reconnect Google when status is invalid/revoked; activation and public writes fail closed meanwhile.
 
 ## Backup and restore

@@ -32,19 +32,35 @@ function validateScheduleInput(input) {
     throw new AppError('INVALID_DURATIONS', 'Durations must contain whole minutes between 5 and 1440.', 422);
   }
   const availability = input.weeklyAvailability || {};
+  const normalizedAvailability = {};
   let windowCount = 0;
   for (let day = 1; day <= 7; day += 1) {
     const windows = availability[day] || availability[String(day)] || [];
     if (!Array.isArray(windows)) throw new AppError('INVALID_AVAILABILITY', 'Weekly availability is invalid.', 422);
+    const normalizedWindows = [];
     for (const window of windows) {
       if (!Array.isArray(window) || window.length !== 2 || !/^\d{2}:\d{2}$/.test(window[0]) || !/^\d{2}:\d{2}$/.test(window[1])) {
         throw new AppError('INVALID_AVAILABILITY', 'Availability windows must use HH:MM start/end values.', 422);
       }
-      const start = Temporal.PlainTime.from(window[0]);
-      const end = Temporal.PlainTime.from(window[1]);
+      let start;
+      let end;
+      try {
+        start = Temporal.PlainTime.from(window[0]);
+        end = Temporal.PlainTime.from(window[1]);
+      } catch {
+        throw new AppError('INVALID_AVAILABILITY', 'Availability windows contain an invalid time.', 422);
+      }
       if (Temporal.PlainTime.compare(start, end) >= 0) throw new AppError('INVALID_AVAILABILITY', 'Availability window end must be after start.', 422);
+      normalizedWindows.push([start.toString({ smallestUnit: 'minute' }), end.toString({ smallestUnit: 'minute' })]);
       windowCount += 1;
     }
+    normalizedWindows.sort((left, right) => left[0].localeCompare(right[0]));
+    for (let index = 1; index < normalizedWindows.length; index += 1) {
+      if (normalizedWindows[index][0] < normalizedWindows[index - 1][1]) {
+        throw new AppError('INVALID_AVAILABILITY', 'Availability windows on the same day must not overlap.', 422);
+      }
+    }
+    normalizedAvailability[day] = normalizedWindows;
   }
   if (!windowCount) throw new AppError('INVALID_AVAILABILITY', 'At least one availability window is required.', 422);
   const int = (value, fallback, min, max, code) => {
@@ -62,7 +78,7 @@ function validateScheduleInput(input) {
     calendarId,
     location: String(input.location || '').trim().slice(0, 240),
     durations,
-    weeklyAvailability: availability,
+    weeklyAvailability: normalizedAvailability,
     slotIntervalMinutes: int(input.slotIntervalMinutes, 15, 5, 240, 'INVALID_SLOT_INTERVAL'),
     bufferBeforeMinutes: int(input.bufferBeforeMinutes, 0, 0, 1440, 'INVALID_BUFFER'),
     bufferAfterMinutes: int(input.bufferAfterMinutes, 0, 0, 1440, 'INVALID_BUFFER'),
@@ -78,8 +94,14 @@ function overlaps(start, end, busyStart, busyEnd) {
 
 function generateCandidateSlots(schedule, durationMinutes, fromDate, toDate, busyIntervals = [], now = Temporal.Now.instant()) {
   if (!schedule.durations.includes(durationMinutes)) throw new AppError('INVALID_DURATION', 'That duration is not offered.', 422);
-  const from = Temporal.PlainDate.from(fromDate);
-  const requestedTo = Temporal.PlainDate.from(toDate);
+  let from;
+  let requestedTo;
+  try {
+    from = Temporal.PlainDate.from(fromDate);
+    requestedTo = Temporal.PlainDate.from(toDate);
+  } catch {
+    throw new AppError('INVALID_DATE_RANGE', 'Slot dates must be valid ISO calendar dates.', 422);
+  }
   const maximumDate = now.toZonedDateTimeISO(schedule.timezone).toPlainDate().add({ days: schedule.max_advance_days });
   const to = Temporal.PlainDate.compare(requestedTo, maximumDate) > 0 ? maximumDate : requestedTo;
   if (Temporal.PlainDate.compare(from, to) > 0) throw new AppError('INVALID_DATE_RANGE', 'The slot date range is invalid.', 422);
@@ -117,7 +139,9 @@ function generateCandidateSlots(schedule, durationMinutes, fromDate, toDate, bus
 }
 
 function validateRequestedSlot(schedule, durationMinutes, startText) {
-  const start = Temporal.Instant.from(startText);
+  let start;
+  try { start = Temporal.Instant.from(startText); }
+  catch { throw new AppError('INVALID_START', 'The requested start time must be a valid timestamp.', 422); }
   const zoned = start.toZonedDateTimeISO(schedule.timezone);
   const date = zoned.toPlainDate();
   const slots = generateCandidateSlots(schedule, durationMinutes, date.toString(), date.toString(), [], Temporal.Now.instant());

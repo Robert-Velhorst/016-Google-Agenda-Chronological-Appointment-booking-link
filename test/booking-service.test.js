@@ -64,6 +64,19 @@ test('provider create failure keeps one recoverable reservation', async (t) => {
   assert.equal(runtime.service.listBookings().length,1);
 });
 
+test('definitive provider conflicts release the local reservation', async (t) => {
+  const runtime=testRuntime(); t.after(()=>runtime.cleanup());
+  const schedule=runtime.service.createSchedule(defaultSchedule(),'create');
+  await runtime.service.setScheduleStatus(schedule.id,'active','activate');
+  const date=futureDate(8); const [slot]=await runtime.service.slots(schedule.slug,30,date,date);
+  runtime.provider.events.set('external-conflict',{id:'external-conflict',start:slot.start,end:slot.end});
+  await assert.rejects(
+    ()=>runtime.service.book(schedule.slug,{name:'Ada Example',email:'ada@example.com',duration:30,start:slot.start},'idempotency-key-definitive-01','book'),
+    (error)=>error.code==='SLOT_UNAVAILABLE'&&!error.retryable
+  );
+  assert.equal(runtime.service.listBookings()[0].status,'failed');
+});
+
 test('an ambiguous provider create is reconciled without a duplicate event', async (t) => {
   const runtime=testRuntime(); t.after(()=>runtime.cleanup());
   const schedule=runtime.service.createSchedule(defaultSchedule(),'create');
@@ -106,4 +119,58 @@ test('idempotency key reuse with different details is rejected', async (t) => {
     ()=>runtime.service.book(schedule.slug,{name:'Different Person',email:'different@example.com',duration:30,start:slots[1].start},'idempotency-key-reuse-0001','reuse'),
     (error)=>error.code==='IDEMPOTENCY_CONFLICT'
   );
+});
+
+test('buffer rules block adjacent concurrent reservations and pending slots stay hidden', async (t) => {
+  const runtime=testRuntime(); t.after(()=>runtime.cleanup());
+  const schedule=runtime.service.createSchedule({...defaultSchedule(),bufferAfterMinutes:15},'create');
+  await runtime.service.setScheduleStatus(schedule.id,'active','activate');
+  const date=futureDate(13); const slots=await runtime.service.slots(schedule.slug,30,date,date);
+  runtime.provider.createDelayMs=50;
+  const attempts=await Promise.allSettled([
+    runtime.service.book(schedule.slug,{name:'Ada Example',email:'ada@example.com',duration:30,start:slots[0].start},'idempotency-key-buffer-0001','book-one'),
+    runtime.service.book(schedule.slug,{name:'Grace Example',email:'grace@example.com',duration:30,start:slots[1].start},'idempotency-key-buffer-0002','book-two')
+  ]);
+  assert.equal(attempts.filter((item)=>item.status==='fulfilled').length,1);
+  assert.equal(attempts.find((item)=>item.status==='rejected').reason.code,'SLOT_UNAVAILABLE');
+  const expectedQueryStart=new Date(new Date(attempts.find((item)=>item.status==='fulfilled').value.start).getTime()-15*60000).toISOString().replace('.000Z','Z');
+  assert.ok(runtime.provider.conflictQueries.some((query)=>query.start===expectedQueryStart));
+
+  const remaining=await runtime.service.slots(schedule.slug,30,date,date);
+  assert.ok(!remaining.some((item)=>item.start===slots[0].start||item.start===slots[1].start));
+});
+
+test('admin lists and complete exports exclude management and idempotency secrets', async (t) => {
+  const runtime=testRuntime(); t.after(()=>runtime.cleanup());
+  const schedule=runtime.service.createSchedule(defaultSchedule(),'create');
+  await runtime.service.setScheduleStatus(schedule.id,'active','activate');
+  const date=futureDate(14); const [slot]=await runtime.service.slots(schedule.slug,30,date,date);
+  await runtime.service.book(schedule.slug,{name:'Ada Example',email:'ada@example.com',duration:30,start:slot.start},'idempotency-key-redaction-01','book');
+  for (const record of [runtime.service.listBookings()[0],runtime.service.exportData().bookings[0]]) {
+    assert.ok(record.schedule_timezone);
+    assert.equal('manage_token_hash' in record,false);
+    assert.equal('manage_token_cipher' in record,false);
+    assert.equal('idempotency_key' in record,false);
+    assert.equal('google_etag' in record,false);
+  }
+  const insert=runtime.db.prepare(`INSERT INTO bookings(id,schedule_id,idempotency_key,requester_name,requester_email,start_at,end_at,status,provider_status,manage_token_hash,manage_token_cipher,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  runtime.db.exec('BEGIN IMMEDIATE');
+  try { for(let index=0;index<500;index+=1)insert.run(`bulk-${index}`,schedule.id,`bulk-key-${index}`,'Bulk User','bulk@example.com','2025-01-01T00:00:00Z','2025-01-01T00:30:00Z','cancelled','cancelled','hash','x.y.z','2025-01-01T00:00:00Z','2025-01-01T00:00:00Z');runtime.db.exec('COMMIT'); } catch(error){runtime.db.exec('ROLLBACK');throw error;}
+  assert.equal(runtime.service.listBookings().length,500);
+  assert.equal(runtime.service.exportData().bookings.length,501);
+});
+
+test('operator reconciliation confirms stored events and releases definitively missing ones', async (t) => {
+  const runtime=testRuntime({RECONCILE_MIN_AGE_MS:'0'}); t.after(()=>runtime.cleanup());
+  const schedule=runtime.service.createSchedule(defaultSchedule(),'create');
+  await runtime.service.setScheduleStatus(schedule.id,'active','activate');
+  const date=futureDate(15); const slots=await runtime.service.slots(schedule.slug,30,date,date);
+  runtime.provider.storeThenFail=true;
+  await assert.rejects(()=>runtime.service.book(schedule.slug,{name:'Ada Example',email:'ada@example.com',duration:30,start:slots[0].start},'idempotency-key-reconcile-01','book-one'));
+  runtime.provider.failCreate=true;
+  await assert.rejects(()=>runtime.service.book(schedule.slug,{name:'Grace Example',email:'grace@example.com',duration:30,start:slots[2].start},'idempotency-key-reconcile-02','book-two'));
+  const result=await runtime.service.reconcilePendingBookings('reconcile');
+  assert.deepEqual(result,{checked:2,confirmed:1,released:1,unresolved:0});
+  assert.deepEqual(runtime.service.listBookings().map((item)=>item.status).sort(),['confirmed','failed']);
 });

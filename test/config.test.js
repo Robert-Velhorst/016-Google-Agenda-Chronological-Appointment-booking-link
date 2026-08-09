@@ -8,4 +8,10 @@ test('public origins and HAI credentials fail closed',()=>{
   assert.throws(()=>loadConfig({ADMIN_TOKEN:'a'.repeat(32),APP_ENV:'test',BASE_URL:'http://localhost/path'}),/origin/);
   assert.throws(()=>loadConfig({ADMIN_TOKEN:'a'.repeat(32),APP_ENV:'test',HAI_CONNECTOR_TOKEN:'short'}),/at least 32/);
   assert.throws(()=>loadConfig({ADMIN_TOKEN:'a'.repeat(32),APP_ENV:'test',HAI_CONNECTOR_PROJECT_KEY:'   '}),/must not be empty/);
+  assert.throws(()=>loadConfig({ADMIN_TOKEN:'a'.repeat(32),APP_ENV:'test',TRUST_PROXY:'yes'}),/true or false/);
+  assert.throws(()=>loadConfig({ADMIN_TOKEN:'a'.repeat(32),APP_ENV:'test',PORT:'70000'}),/65535/);
+  assert.throws(()=>loadConfig({ADMIN_TOKEN:'a'.repeat(32),APP_ENV:'test',BASE_URL:'ftp://example.test'}),/HTTP or HTTPS/);
+});
+test('production reconciliation cannot race an in-flight provider request',()=>{
+  assert.throws(()=>loadConfig({ADMIN_TOKEN:'a'.repeat(32),ENCRYPTION_KEY:'b'.repeat(64),APP_ENV:'production',BASE_URL:'https://booking.example',PROVIDER_TIMEOUT_MS:'10000',RECONCILE_MIN_AGE_MS:'10000'}),/at least twice/);
 });

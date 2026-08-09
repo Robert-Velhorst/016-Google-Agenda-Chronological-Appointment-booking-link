@@ -14,6 +14,7 @@ Every visible action below is wired to a real route or a local navigation/state 
 | Settings | Disconnect Google | `POST /api/admin/google/disconnect` | Revoke/disconnect failure is surfaced |
 | Settings | Pause/resume all booking | `POST /api/admin/emergency-stop` | State only changes after server response |
 | Settings | Export data | `GET /api/admin/export` and browser download | Download error is surfaced |
+| Settings | Reconcile uncertain bookings | `POST /api/admin/reconcile` | Found/missing/unresolved counts shown after bounded read-only lookup |
 | Settings | Delete local data | Explicit phrase plus Google-event acknowledgement, then `DELETE /api/admin/data` | Fails closed if acknowledgement is absent |
 | Requester | Choose duration/date | Fetches live `/slots` | Unavailable/provider error shown |
 | Requester | Choose time | Selects one chronological server slot | Cannot continue without selection |

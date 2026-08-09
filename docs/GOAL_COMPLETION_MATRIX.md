@@ -26,17 +26,17 @@
 | 019 Audit history | Implemented | Append-only action log exposed to owner |
 | 020 Dashboard/next actions | Implemented | Readiness, exceptions, schedules and booking state |
 | 021 Forms/validation/autosave | Partial | Server and client validation; no deceptive autosave claim |
-| 022 Search/filter/sort/pagination | Partial | Chronological sorting and bounded 500-row admin lists; no paging UI |
-| 023 Import/export | Partial | Safe JSON export shipped; import intentionally deferred |
+| 022 Search/filter/sort/pagination | Partial | Chronological sorting and bounded 500-row admin display; no paging UI |
+| 023 Import/export | Partial | Complete redacted JSON export shipped; import intentionally deferred |
 | 024 Presets/defaults | Partial | Sensible schedule defaults; reusable named presets deferred |
 | 025 AI abstraction/fallback | N/A | Product does not need AI and has no fake deterministic AI |
 | 026 Human review/approvals | Implemented | Requester review step precedes Calendar mutation |
 | 027 Notifications/reminders | Partial | Google email updates/reminders implemented; live delivery blocked |
-| 028 Privacy/delete | Implemented | Export and explicit local deletion with Google-event acknowledgement |
+| 028 Privacy/delete | Implemented | Secret-redacted export; local deletion requires explicit acknowledgement and prior Google disconnect |
 | 029 Web security | Implemented | CSP and defensive HTTP headers |
 | 030 Secrets/rotation | Implemented | Env-only secrets, encrypted OAuth tokens, disconnect/revoke path |
 | 031 One-command local dev | Implemented | `npm install`, migrate, doctor, dev/start documented |
-| 032 Docker/deployment | Partial | Compose validates; image build blocked because Docker engine is stopped |
+| 032 Docker/deployment | Partial | Hardened Compose exists; shared daemon timed out and was not restarted around unrelated containers |
 | 033 Migrations/rollback | Partial | Forward idempotent migration plus backup-first operator procedure |
 | 034 Doctor command | Implemented | `npm run doctor` validates runtime gates |
 | 035 Health/readiness | Implemented | `/healthz` and provider-aware `/readyz` |
@@ -45,7 +45,7 @@
 | 038 Test fake provider | Implemented | Isolated `test/fake-calendar-provider.js` |
 | 039 Factories/fixtures | Implemented | Deterministic schedule and future-date helpers |
 | 040 Backend tests | Implemented | Policy/service/config/HTTP suites |
-| 041 Frontend tests | Partial | Production compile and browser QA; component unit suite deferred |
+| 041 Frontend tests | Partial | Production compile passes; current in-app Browser webview attachment is externally blocked |
 | 042 Worker tests | N/A | No application worker exists |
 | 043 End-to-end workflow | Implemented | Service/API critical-path integration with controlled provider |
 | 044 Acceptance matrix | Implemented | `ACCEPTANCE_TESTS.md` |
@@ -54,14 +54,14 @@
 | 047 Path traversal | Implemented | Static serving resolves and constrains files to `dist` |
 | 048 Provider failures | Implemented | Create failure rollback and fail-closed behavior tested |
 | 049 Accessibility | Partial | Semantic labels, focus states, contrast; formal audit pending |
-| 050 Responsive/browser compatibility | Implemented | 1280x720 and 390x844 rendered browser checks passed |
+| 050 Responsive/browser compatibility | Partial | Responsive implementation exists; current requested Browser run is blocked by webview attachment timeout |
 | 051 Performance/indexing | Implemented | SQLite overlap indexes, bounded date range/lists, bundle baseline |
 | 052 Large data/pagination | Partial | Queries bounded; stress/pagination UX deferred |
 | 053 Backup/restore | Partial | Online-safe backup command and restore runbook; restore drill pending |
-| 054 Reconciliation/repair | Partial | Audit/export/doctor support diagnosis; dedicated repair CLI deferred |
+| 054 Reconciliation/repair | Implemented | Bounded operator-triggered deterministic event lookup repairs old uncertain reservations |
 | 055 Local-first analytics | N/A | No behavioral analytics collection |
 | 056 SaaS/no forced billing | N/A | Self-hosted single-owner product; no billing |
-| 057 Dutch/English/i18n | Partial | Locale-aware date formatting; strings currently English |
+| 057 Dutch/English/i18n | Implemented | Requester flow and date/time presentation support Dutch and English |
 | 058 Feature flags/rollout | Partial | Emergency stop and schedule states; no generic flag service |
 | 059 State machines | Implemented | Explicit schedule and booking state transitions |
 | 060 Domain specification | Implemented | Critical path, schema and invariants documented |
@@ -93,11 +93,11 @@
 | 086 Task graph | Implemented | `TASK_GRAPH.md` |
 | 087 Worklog/checkpoints | Implemented | Both required Codex documents |
 | 088 Resume safety | Implemented | Deterministic checkpoint and verification commands |
-| 089 Stabilization gates | Implemented | Check, test, build, audit, Docker, browser, fresh-clone sequence |
+| 089 Stabilization gates | Partial | Check/test/build/audit/Windows pass; Docker and current Browser acceptance externally blocked |
 | 090 No vanity work | Implemented | Removed speculative reports and placeholder generators |
 | 091 Definition of done | Implemented | Acceptance matrix separates implemented/blocked/N/A |
-| 092 Fresh-clone run | Implemented | Canonical remote clone at `e5dca3e` passed check, 13 tests and build |
-| 093 Manual evidence | Implemented | Browser QA covers operator, booking, mobile and emergency-stop flows |
+| 092 Fresh-clone run | Implemented | Windows setup executed clean install, build, three migrations, and doctor on 2026-08-09 |
+| 093 Manual evidence | Partial | Windows/HAI/runtime evidence passes; current requested Browser and live Google remain blocked |
 | 094 No-excuses search | Implemented | Final TODO/secret/dead-action scan passed |
 | 095 Completion matrix | Implemented | This file |
 | 096 Verification report | Implemented | `FINAL_VERIFICATION_REPORT.md`, updated through release |
@@ -117,6 +117,6 @@
 | 110 Safe retries/recovery | Implemented | Idempotent create, ETags, 404-safe cancel, rollback on failure |
 | 111 Ambiguous external actions | Implemented | Deterministic event lookup resolves Google 409 ambiguity |
 | 112 Version/changelog | Implemented | Semantic package version and `CHANGELOG.md` |
-| 113 Regression baseline | Implemented | Automated service/API/policy/extension suite |
+| 113 Regression baseline | Implemented | 31 service/API/policy/provider/rate-limit tests plus extension suite |
 | 114 Maintenance/refactor review | Implemented | Small modules and documented Node SQLite debt |
 | 115 Human operator readiness | Blocked | Local workflow ready; live Google acceptance requires credentials/consent |

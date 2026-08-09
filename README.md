@@ -19,11 +19,11 @@ The HTTP server binds to `127.0.0.1` in development. Production requires `BASE_U
 
 ### Windows 11 standalone
 
-Run `powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows.ps1` once, then launch with `start-windows.cmd`. The setup script creates strong local secrets only when `.env` does not exist and preserves existing configuration. For an ngrok endpoint, configure ngrok first and run `powershell -File .\scripts\start-ngrok.ps1 -PublicUrl https://your-static-domain.example`.
+Run `powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows.ps1` once, then launch with `start-windows.cmd`. The setup script creates strong local secrets only when `.env` does not exist and preserves existing configuration. For a reserved ngrok endpoint, run `powershell -File .\scripts\start-ngrok.ps1 -PublicUrl https://your-static-domain.example`. For a temporary URL, use `-RandomUrl`; the launcher discovers the assigned HTTPS URL, starts the app with matching production/OAuth settings, and reports it only after both local and public health checks pass.
 
 ### HAI connector
 
-Set the same strong `HAI_CONNECTOR_TOKEN` for the booking service and the companion in `integrations/hai`. The companion converts the authenticated booking feed into HAI's existing `json-feed` input without storing the bearer token in HAI or in a URL. See `integrations/hai/README.md`.
+Set the same strong `HAI_CONNECTOR_TOKEN` for the booking service and the companion in `integrations/hai`. The companion converts the authenticated booking feed into HAI's existing `json-feed` input without storing the bearer token in HAI or in a URL. Requester name/email are excluded by default; enable `HAI_CONNECTOR_INCLUDE_PII=true` only after an explicit privacy decision. See `integrations/hai/README.md`.
 
 ## Chrome appointment-choice sorter
 
@@ -43,7 +43,8 @@ The original Manifest V3 extension remains available as a separate, local browse
 - Calendar writes require a connected Google account and an active schedule.
 - Short SQLite `BEGIN IMMEDIATE` transactions serialize local reservations; network calls happen outside database transactions and are reconciled by deterministic event IDs.
 - The event ID is deterministic per schedule/idempotency key, preventing duplicate retry events.
-- Google availability is rechecked at confirmation and reschedule.
+- Google availability and local pending/confirmed reservations are rechecked at confirmation and reschedule, including schedule buffers.
+- The operator can reconcile old uncertain reservations using deterministic Google event lookup; no new event is created by reconciliation.
 - DST gaps and ambiguous fold times are rejected rather than silently shifted.
 - OAuth and manage-token recovery data use AES-256-GCM; public manage tokens are hashed for verification and placed in URL fragments, not server request URLs.
 - Emergency stop blocks new slot discovery, booking, and rescheduling while preserving cancellation access to existing events.

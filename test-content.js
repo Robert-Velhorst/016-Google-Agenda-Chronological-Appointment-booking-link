@@ -48,12 +48,24 @@ const order = (selector) => [...window.document.querySelectorAll(selector)]
 
   const added = window.document.createElement('article');
   added.className = 'card';
-  added.textContent = 'NO 45';
+  added.textContent = '45 minutes';
   window.document.querySelector('#choices').append(added);
+  const combined = window.document.createElement('article');
+  combined.className = 'card';
+  combined.textContent = '1 hour 30 minutes';
+  window.document.querySelector('#choices').append(combined);
   await wait();
 
-  assert.deepEqual(order('#choices > .card'), ['NO 30', 'NO 45', 'NO 60', 'NO 120', 'NO 240', 'NO 480']);
-  assert.equal(window.document.querySelectorAll('#choices > .card').length, 6);
+  assert.deepEqual(order('#choices > .card'), ['NO 30', '45 minutes', 'NO 60', '1 hour 30 minutes', 'NO 120', 'NO 240', 'NO 480']);
+
+  combined.firstChild.data = '15 minutes';
+  await wait();
+  assert.deepEqual(order('#choices > .card'), ['15 minutes', 'NO 30', '45 minutes', 'NO 60', 'NO 120', 'NO 240', 'NO 480']);
+
+  added.setAttribute('data-duration', '10');
+  await wait();
+  assert.deepEqual(order('#choices > .card'), ['45 minutes', '15 minutes', 'NO 30', 'NO 60', 'NO 120', 'NO 240', 'NO 480']);
+  assert.equal(window.document.querySelectorAll('#choices > .card').length, 7);
   console.log('content.js tests passed');
 })().catch((error) => {
   console.error(error);

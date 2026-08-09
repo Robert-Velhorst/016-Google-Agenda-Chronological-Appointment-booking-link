@@ -3,12 +3,22 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const zlib = require('node:zlib');
 const { AppError } = require('./errors');
 const { safeEqual } = require('./crypto');
 const { createRateLimiter } = require('./rate-limit');
 const { publicSchedule } = require('./booking-service');
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json; charset=utf-8' };
+
+function decodePathPart(value) {
+  try { return decodeURIComponent(value); }
+  catch { throw new AppError('INVALID_PATH', 'The request path is malformed.', 400); }
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
+}
 
 function sendJson(res, status, body, headers = {}) {
   const text = JSON.stringify(body);
@@ -42,6 +52,7 @@ async function readJson(req, limit = 65536) {
 function createApp({ config, service, provider }) {
   const checkRate = createRateLimiter({ windowMs: config.rateLimitWindowMs, publicLimit: config.rateLimitPublic, adminLimit: config.rateLimitAdmin });
   const dist = path.resolve(__dirname, '..', 'dist');
+  const staticCache = new Map();
 
   function admin(req) {
     const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
@@ -75,7 +86,7 @@ function createApp({ config, service, provider }) {
       }
       if (req.method === 'GET' && url.pathname === '/api/integrations/hai/status') {
         hai(req);
-        return sendJson(res, 200, { configured: true, authority: 'read_only', schemaVersion: 1 });
+        return sendJson(res, 200, { configured: true, authority: 'read_only', schemaVersion: 1, includesPii: config.haiConnectorIncludePii });
       }
       if (req.method === 'GET' && url.pathname === '/api/integrations/hai/feed') {
         hai(req);
@@ -84,21 +95,21 @@ function createApp({ config, service, provider }) {
       if (req.method === 'GET' && url.pathname === '/oauth/google/callback') {
         if (url.searchParams.get('error')) throw new AppError('GOOGLE_CONSENT_DENIED', 'Google authorization was not completed.', 400);
         const ownerId = await provider.completeAuthorization(url.searchParams.get('state') || '', url.searchParams.get('code') || '');
-        const html = `<!doctype html><meta charset="utf-8"><title>Google Calendar connected</title><style>body{font:16px system-ui;max-width:640px;margin:80px auto;padding:24px;color:#172033}a{color:#1458d6}</style><h1>Google Calendar connected</h1><p>Authorization was stored securely for ${ownerId}. You can return to the operator dashboard.</p><a href="/">Return to dashboard</a>`;
+        const html = `<!doctype html><meta charset="utf-8"><title>Google Calendar connected</title><h1>Google Calendar connected</h1><p>Authorization was stored securely for ${escapeHtml(ownerId)}. You can return to the operator dashboard.</p><a href="/">Return to dashboard</a>`;
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-length': Buffer.byteLength(html) });
         return res.end(html);
       }
 
       let match = url.pathname.match(/^\/api\/public\/schedules\/([^/]+)$/);
-      if (req.method === 'GET' && match) return sendJson(res, 200, { schedule: publicSchedule(service.scheduleBySlug(decodeURIComponent(match[1]))) });
+      if (req.method === 'GET' && match) return sendJson(res, 200, { schedule: publicSchedule(service.scheduleBySlug(decodePathPart(match[1]))) });
       match = url.pathname.match(/^\/api\/public\/schedules\/([^/]+)\/slots$/);
       if (req.method === 'GET' && match) {
-        const slots = await service.slots(decodeURIComponent(match[1]), Number(url.searchParams.get('duration')), url.searchParams.get('from'), url.searchParams.get('to'));
+        const slots = await service.slots(decodePathPart(match[1]), Number(url.searchParams.get('duration')), url.searchParams.get('from'), url.searchParams.get('to'));
         return sendJson(res, 200, { slots });
       }
       match = url.pathname.match(/^\/api\/public\/schedules\/([^/]+)\/book$/);
       if (req.method === 'POST' && match) {
-        const booking = await service.book(decodeURIComponent(match[1]), await readJson(req), String(req.headers['idempotency-key'] || ''), requestId);
+        const booking = await service.book(decodePathPart(match[1]), await readJson(req), String(req.headers['idempotency-key'] || ''), requestId);
         return sendJson(res, 201, { booking });
       }
       match = url.pathname.match(/^\/api\/public\/bookings\/([^/]+)\/manage$/);
@@ -126,10 +137,12 @@ function createApp({ config, service, provider }) {
         return sendJson(res, 200, { google: provider.connectionStatus(config.ownerId) });
       }
       if (req.method === 'POST' && url.pathname === '/api/admin/emergency-stop') return sendJson(res, 200, service.setEmergencyStop(Boolean((await readJson(req)).enabled), requestId));
+      if (req.method === 'POST' && url.pathname === '/api/admin/reconcile') return sendJson(res, 200, await service.reconcilePendingBookings(requestId));
       if (req.method === 'GET' && url.pathname === '/api/admin/export') return sendJson(res, 200, service.exportData(), { 'content-disposition': `attachment; filename="chronological-booking-export-${new Date().toISOString().slice(0, 10)}.json"` });
       if (req.method === 'DELETE' && url.pathname === '/api/admin/data') {
         const body = await readJson(req);
         if (body.confirmation !== 'DELETE LOCAL DATA' || body.acknowledgeGoogleEventsRemain !== true) throw new AppError('DELETION_CONFIRMATION_REQUIRED', 'Confirm local deletion and acknowledge that Google events remain.', 422);
+        if (provider.connectionStatus(config.ownerId).connected) throw new AppError('DISCONNECT_GOOGLE_FIRST', 'Disconnect Google Calendar before deleting local data so access can be revoked safely.', 409);
         service.db.exec('BEGIN IMMEDIATE');
         try {
           service.db.prepare('DELETE FROM bookings WHERE schedule_id IN (SELECT id FROM schedules WHERE owner_id=?)').run(config.ownerId);
@@ -149,8 +162,16 @@ function createApp({ config, service, provider }) {
       const isAsset = url.pathname.startsWith('/assets/');
       const candidate = isAsset ? path.resolve(dist, `.${url.pathname}`) : path.join(dist, 'index.html');
       if (!candidate.startsWith(`${dist}${path.sep}`) || !fs.existsSync(candidate)) throw new AppError('FRONTEND_NOT_BUILT', 'Frontend assets are unavailable. Run npm run build.', 503);
-      const body = fs.readFileSync(candidate);
-      res.writeHead(200, { 'content-type': MIME[path.extname(candidate)] || 'application/octet-stream', 'content-length': body.length, 'cache-control': isAsset ? 'public, max-age=31536000, immutable' : 'no-cache' });
+      let cached = staticCache.get(candidate);
+      if (!cached) {
+        const body = fs.readFileSync(candidate);
+        const compressible = /\.(?:css|html|js|json|svg)$/.test(candidate) && body.length >= 1024;
+        cached = { body, gzip: compressible ? zlib.gzipSync(body, { level: zlib.constants.Z_BEST_SPEED }) : null };
+        staticCache.set(candidate, cached);
+      }
+      const useGzip = Boolean(cached.gzip && /(?:^|,)\s*gzip\s*(?:,|$)/i.test(String(req.headers['accept-encoding'] || '')));
+      const body = useGzip ? cached.gzip : cached.body;
+      res.writeHead(200, { 'content-type': MIME[path.extname(candidate)] || 'application/octet-stream', 'content-length': body.length, 'cache-control': isAsset ? 'public, max-age=31536000, immutable' : 'no-cache', ...(cached.gzip ? { vary: 'accept-encoding' } : {}), ...(useGzip ? { 'content-encoding': 'gzip' } : {}) });
       if (req.method === 'HEAD') return res.end();
       return res.end(body);
     } catch (error) {

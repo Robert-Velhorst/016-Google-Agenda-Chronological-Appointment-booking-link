@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased - 2026-08-09
+
+- Made slot conflicts buffer-aware across Google events and local pending/confirmed reservations.
+- Added bounded reconciliation for ambiguous provider writes and safer transient OAuth refresh handling.
+- Redacted management/idempotency secrets, made exports complete, and made HAI requester PII opt-in.
+- Hardened Windows/ngrok launch, static compression/caching, validation, rate-limit memory, provider pagination/timeouts, and local deletion safety.
+- Improved admin/requester loading, timezone, logout, rescheduling, and stale-slot behavior.
+- Fixed combined hour/minute sorting and text/attribute-only live updates in the Chrome extension.
+
 ## 2.0.0 - 2026-08-08
 
 - Added the local-first booking service, React operator console, and public booking/manage pages.

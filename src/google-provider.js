@@ -13,6 +13,13 @@ function base64url(buffer) {
   return Buffer.from(buffer).toString('base64url');
 }
 
+async function providerBody(response) {
+  const text = await response.text();
+  if (!text) return null;
+  try { return JSON.parse(text); }
+  catch { return { message: text.slice(0, 500) }; }
+}
+
 class GoogleCalendarProvider {
   constructor({ config, db, vault, fetchImpl = fetch }) {
     this.config = config;
@@ -23,15 +30,13 @@ class GoogleCalendarProvider {
   }
 
   async fetchRequest(url, options = {}) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.config.providerTimeoutMs);
+    const timeoutSignal = AbortSignal.timeout(this.config.providerTimeoutMs);
+    const signal = options.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal;
     try {
-      return await this.fetch(url, { ...options, signal: options.signal || controller.signal });
+      return await this.fetch(url, { ...options, signal });
     } catch (error) {
       if (error instanceof AppError) throw error;
       throw new AppError('GOOGLE_NETWORK_ERROR', 'Google Calendar did not respond. The action was not confirmed and can be retried safely.', 502, true);
-    } finally {
-      clearTimeout(timer);
     }
   }
 
@@ -86,8 +91,9 @@ class GoogleCalendarProvider {
         code_verifier: row.code_verifier
       })
     });
-    const data = await response.json();
+    const data = await providerBody(response);
     if (!response.ok) throw providerError('Google rejected the authorization exchange.', response.status, data);
+    if (!data?.access_token) throw new AppError('GOOGLE_INVALID_RESPONSE', 'Google authorization returned an incomplete response.', 502, true);
     const expiresAt = new Date(Date.now() + Number(data.expires_in || 3600) * 1000).toISOString();
     const encrypted = this.vault.encrypt(JSON.stringify(data));
     this.db.prepare(`INSERT INTO oauth_connections(owner_id, encrypted_tokens, scopes, status, expires_at, updated_at)
@@ -139,11 +145,14 @@ class GoogleCalendarProvider {
         grant_type: 'refresh_token'
       })
     });
-    const refreshed = await response.json();
+    const refreshed = await providerBody(response);
     if (!response.ok) {
-      this.db.prepare("UPDATE oauth_connections SET status='invalid', updated_at=? WHERE owner_id=?").run(new Date().toISOString(), ownerId);
+      if ([400, 401].includes(response.status) && ['invalid_grant', 'invalid_client'].includes(refreshed?.error)) {
+        this.db.prepare("UPDATE oauth_connections SET status='invalid', updated_at=? WHERE owner_id=?").run(new Date().toISOString(), ownerId);
+      }
       throw providerError('Google authorization could not be refreshed.', response.status, refreshed);
     }
+    if (!refreshed?.access_token) throw new AppError('GOOGLE_INVALID_RESPONSE', 'Google token refresh returned an incomplete response.', 502, true);
     const merged = { ...tokens, ...refreshed, refresh_token: tokens.refresh_token };
     const expiresAt = new Date(Date.now() + Number(refreshed.expires_in || 3600) * 1000).toISOString();
     this.db.prepare('UPDATE oauth_connections SET encrypted_tokens=?, expires_at=?, updated_at=? WHERE owner_id=?')
@@ -167,8 +176,9 @@ class GoogleCalendarProvider {
   }
 
   async verify(ownerId, calendarId = 'primary') {
-    const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}`;
-    const { data } = await this.request(ownerId, url);
+    const url = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}`);
+    url.searchParams.set('fields', 'id,summary,timeZone');
+    const { data } = await this.request(ownerId, url.toString());
     return { id: data.id, summary: data.summary, timezone: data.timeZone };
   }
 
@@ -193,6 +203,7 @@ class GoogleCalendarProvider {
         singleEvents: 'true',
         showDeleted: 'false',
         maxResults: '2500',
+        fields: 'items(id,status,transparency),nextPageToken',
         ...(pageToken ? { pageToken } : {})
       }).toString();
       const { data } = await this.request(ownerId, url.toString());
@@ -205,7 +216,7 @@ class GoogleCalendarProvider {
 
   async createEvent(ownerId, calendarId, eventId, booking, schedule, manageUrl) {
     const url = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`);
-    url.search = new URLSearchParams({ sendUpdates: 'all' }).toString();
+    url.search = new URLSearchParams({ sendUpdates: 'all', fields: 'id,etag,htmlLink' }).toString();
     const reminders = schedule.reminderMinutes.slice(0, 5).map((minutes) => ({ method: 'email', minutes }));
     const { data } = await this.request(ownerId, url.toString(), {
       method: 'POST',
@@ -224,14 +235,15 @@ class GoogleCalendarProvider {
   }
 
   async getEvent(ownerId, calendarId, eventId) {
-    const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`;
-    const { data } = await this.request(ownerId, url);
+    const url = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`);
+    url.searchParams.set('fields', 'id,etag,htmlLink,start,end');
+    const { data } = await this.request(ownerId, url.toString());
     return { id: data.id, etag: data.etag, htmlLink: data.htmlLink, start: data.start, end: data.end };
   }
 
   async updateEvent(ownerId, calendarId, eventId, etag, booking, schedule) {
     const url = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`);
-    url.search = new URLSearchParams({ sendUpdates: 'all' }).toString();
+    url.search = new URLSearchParams({ sendUpdates: 'all', fields: 'id,etag,htmlLink' }).toString();
     const { data } = await this.request(ownerId, url.toString(), {
       method: 'PATCH',
       headers: etag ? { 'if-match': etag } : {},
