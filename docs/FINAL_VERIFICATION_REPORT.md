@@ -13,6 +13,7 @@ Evidence recorded on 2026-08-09 for branch `main`.
 | Windows 11 setup | PASS: existing `.env` preserved, clean `npm ci`, build, three migrations, and doctor |
 | Windows launcher/runtime | PASS: `/healthz` returned `ok`; hashed assets returned immutable caching and `content-encoding: gzip` |
 | HAI compatibility | PASS: real local companion proxy returned one owner-scoped read-only item with cursor; requester PII excluded |
+| GitHub Actions | PASS: run `31286138998` for implementation commit `d131bed` |
 | Requested in-app Browser | BLOCKED: installed/discoverable, but its webview repeatedly timed out while attaching after documented reconnect |
 
 ## Production controls verified
