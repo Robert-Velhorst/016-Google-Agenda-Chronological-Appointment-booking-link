@@ -8,13 +8,15 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24.18.1
+          node-version: 24.21.0
           cache: npm
+      - run: npm install --global npm@12.2.0 --no-audit --no-fund
+      - run: test "$(npm --version)" = "12.2.0"
       - run: npm ci
       - run: npm run check
       - run: npm test
       - run: npm run build
-      - run: npm audit --audit-level=high
+      - run: npm audit --audit-level=moderate
