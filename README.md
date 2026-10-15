@@ -144,7 +144,7 @@ This is the simplest supported route for a non-technical operator.
 ### Prerequisites
 
 - Windows 11.
-- [Node.js](https://nodejs.org/) 24.21 LTS or newer within Node 24, including npm 12.2.0 or newer.
+- [Node.js](https://nodejs.org/) 24.22 LTS or newer within Node 24, including npm 12.2.0 or newer.
 - A modern browser.
 - A Google Cloud project and OAuth client for live Calendar operation.
 - ngrok only if the service must be reachable from the public internet through an ngrok URL.
@@ -234,7 +234,7 @@ Schedule states are:
 
 ### Requirements
 
-- Node.js 24.21 LTS or newer within Node 24. CI uses Node.js 24.22.0 and npm 12.2.0.
+- Node.js 24.22 LTS or newer within Node 24. CI uses Node.js 24.22.0 and npm 12.2.0.
 - npm 12.2.0 or newer and Git.
 - No separate database server: the application uses Node's built-in SQLite interface.
 
