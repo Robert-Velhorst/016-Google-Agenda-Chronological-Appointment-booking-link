@@ -234,7 +234,7 @@ Schedule states are:
 
 ### Requirements
 
-- Node.js 24.21 LTS or newer within Node 24. CI uses Node.js 24.21.0 and npm 12.2.0.
+- Node.js 24.21 LTS or newer within Node 24. CI uses Node.js 24.22.0 and npm 12.2.0.
 - npm 12.2.0 or newer and Git.
 - No separate database server: the application uses Node's built-in SQLite interface.
 
@@ -302,7 +302,7 @@ If ngrok reports `ERR_NGROK_334`, the assigned endpoint is already active elsewh
 
 ## Docker deployment
 
-The Docker image uses Node.js 24.21.0 Alpine, builds and tests in a build stage, installs only production dependencies in the runtime stage, and runs as the unprivileged `node` user.
+The Docker image uses Node.js 24.22.0 Alpine, builds and tests in a build stage, installs only production dependencies in the runtime stage, and runs as the unprivileged `node` user.
 
 Create a production `.env` with at least:
 
@@ -686,7 +686,7 @@ Local deletion removes local bookings, schedules, OAuth rows, OAuth states, and 
 
 ### The server will not start
 
-- Run `node --version`; it must be 24.21.0 or newer within Node 24.
+- Run `node --version`; it must be 24.22.0 or newer within Node 24.
 - Run `npm ci`, `npm run build`, `npm run migrate`, and `npm run doctor`.
 - Confirm `.env` exists and `ADMIN_TOKEN` has at least 24 characters.
 - In production, confirm `BASE_URL` uses HTTPS and `ENCRYPTION_KEY` is exactly 64 hexadecimal characters.
@@ -757,7 +757,7 @@ Coverage includes:
 - bounded rate-limit memory;
 - extension duration parsing and live DOM updates.
 
-GitHub Actions runs on every push and pull request with Node.js 24.21.0 and npm 12.2.0, and executes clean install, syntax/asset checks, tests, production build, and a moderate-severity dependency audit.
+GitHub Actions runs on every push and pull request with Node.js 24.22.0 and npm 12.2.0, and executes clean install, syntax/asset checks, tests, production build, and a moderate-severity dependency audit.
 
 Automated tests use a controlled calendar provider. They do not replace the live Google acceptance script in [docs/ACCEPTANCE_TESTS.md](docs/ACCEPTANCE_TESTS.md). The repository currently has no committed component-browser or full real-provider E2E suite.
 
