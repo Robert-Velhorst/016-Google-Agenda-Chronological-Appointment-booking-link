@@ -1,4 +1,4 @@
-FROM node:24.22.0-alpine
+FROM node:26.12.0-alpine
 ENV NODE_ENV=production PORT=8790
 WORKDIR /app
 COPY integrations/hai/connector-server.js ./connector-server.js

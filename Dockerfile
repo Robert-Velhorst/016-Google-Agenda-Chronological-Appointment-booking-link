@@ -1,4 +1,4 @@
-FROM node:24.22.0-alpine AS build
+FROM node:26.12.0-alpine AS build
 WORKDIR /app
 RUN npm install --global npm@12.2.0 --no-audit --no-fund
 COPY package*.json ./
@@ -6,7 +6,7 @@ RUN npm ci
 COPY . .
 RUN npm run build && npm run check && npm test
 
-FROM node:24.22.0-alpine AS runtime
+FROM node:26.12.0-alpine AS runtime
 ENV APP_ENV=production NODE_ENV=production PORT=8787
 WORKDIR /app
 COPY package*.json ./
