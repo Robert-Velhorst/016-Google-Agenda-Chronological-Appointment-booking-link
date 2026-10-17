@@ -12,7 +12,7 @@ try {
   const config = loadConfig();
   add('configuration', true, `${config.appEnv} at ${config.baseUrl}`);
   const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
-  add('node', nodeMajor > 24 || (nodeMajor === 24 && nodeMinor >= 15), `${process.versions.node}; requires 24.15 or newer`);
+  add('node', nodeMajor === 26 && nodeMinor >= 12, `${process.versions.node}; requires 26.12.0 or newer within Node 26`);
   add('frontend build', fs.existsSync(path.resolve(__dirname, '..', 'dist', 'index.html')), 'run npm run build when missing', false);
   add('Google OAuth', config.googleConfigured, config.googleConfigured ? 'credentials present' : 'not configured; booking mutations disabled', false);
   add('encryption', createVault(config.encryptionKey).available, 'required for OAuth tokens and manage-token recovery');

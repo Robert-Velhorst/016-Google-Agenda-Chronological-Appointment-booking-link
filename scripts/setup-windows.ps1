@@ -5,7 +5,7 @@ if ($env:OS -ne 'Windows_NT') { throw 'This installer is for Windows 11.' }
 $node = Get-Command node -ErrorAction Stop
 $npm = Get-Command npm.cmd -ErrorAction Stop
 $version = [version]((& $node.Source --version).TrimStart('v'))
-if ($version -lt [version]'24.15.0') { throw "Node.js 24.15 or newer is required; found $version." }
+if ($version -lt [version]'26.12.0' -or $version -ge [version]'27.0.0') { throw "Node.js 26.12.0 or newer within Node 26 is required; found $version." }
 
 $root = Split-Path -Parent $PSScriptRoot
 $envFile = Join-Path $root '.env'
