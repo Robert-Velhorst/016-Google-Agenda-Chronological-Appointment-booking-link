@@ -32,11 +32,11 @@ Production readiness still depends on the operator completing environment-specif
 - grant consent with the Google account that owns or can edit the target calendar;
 - use an exact HTTPS public URL and matching OAuth redirect URI;
 - verify a real create, invitation/reminder, reschedule, and cancellation in a disposable calendar;
-- verify the chosen ngrok endpoint or reverse proxy is available;
+- configure the owned HTTPS hostname and reverse proxy for the Hetzner deployment;
 - define a retention policy for requester data;
 - keep the deployment to one application instance unless distributed locking and rate limiting are added.
 
-Passing tests do not prove that a particular Google account, ngrok account, email-delivery policy, or Docker daemon is currently operational. See [the final verification report](docs/FINAL_VERIFICATION_REPORT.md) and [acceptance checklist](docs/ACCEPTANCE_TESTS.md) for the latest recorded evidence.
+Passing tests do not prove that a particular Google account, Hetzner host, email-delivery policy, or Docker daemon is currently operational. See [the final verification report](docs/FINAL_VERIFICATION_REPORT.md) and [acceptance checklist](docs/ACCEPTANCE_TESTS.md) for the latest recorded evidence.
 
 ## Contents
 
@@ -46,7 +46,6 @@ Passing tests do not prove that a particular Google account, ngrok account, emai
 - [Google Calendar setup](#google-calendar-setup)
 - [Create and publish the first schedule](#create-and-publish-the-first-schedule)
 - [Manual developer setup](#manual-developer-setup)
-- [Public access with ngrok](#public-access-with-ngrok)
 - [Docker deployment](#docker-deployment)
 - [HAI integration](#hai-integration)
 - [Chrome extension](#chrome-extension-appointment-duration-sorter)
@@ -147,7 +146,7 @@ This is the simplest supported route for a non-technical operator.
 - [Node.js](https://nodejs.org/) 26.12.0 or newer within Node 26, including npm 12.2.0 or newer.
 - A modern browser.
 - A Google Cloud project and OAuth client for live Calendar operation.
-- ngrok only if the service must be reachable from the public internet through an ngrok URL.
+- a Hetzner host and owned HTTPS domain for public deployment.
 
 ### Install
 
@@ -268,37 +267,9 @@ The default development server listens only on `127.0.0.1:8787`. `npm run dev` i
 
 Database migrations also run automatically whenever the application opens the database. They are versioned and applied once.
 
-## Public access with ngrok
+## Hetzner deployment
 
-ngrok makes the application on this computer reachable through an HTTPS URL. It is a tunnel, not managed hosting: the computer, application, and ngrok process must remain running.
-
-### Reserved/static endpoint
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\start-ngrok.ps1 `
-  -PublicUrl https://your-reserved-domain.ngrok-free.app
-```
-
-### Temporary endpoint
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\start-ngrok.ps1 -RandomUrl
-```
-
-The launcher:
-
-- starts ngrok in the background;
-- discovers or validates the HTTPS origin;
-- runs the booking service in production mode on loopback;
-- aligns `BASE_URL` and `GOOGLE_REDIRECT_URI` with the tunnel;
-- enables trusted proxy address handling;
-- checks both local and public `/healthz` endpoints;
-- prints the public URL only after both checks pass;
-- stops its exact server and tunnel child processes when it exits or fails.
-
-Before connecting Google, register the printed redirect URI in the Google OAuth client. A random ngrok URL can change, so it is unsuitable for a stable booking link unless the Google redirect registration and shared links are updated each time.
-
-If ngrok reports `ERR_NGROK_334`, the assigned endpoint is already active elsewhere. Stop the owning endpoint or allocate another endpoint. Do not enable pooling unless deliberate load balancing to identical, shared-state application instances has been designed; this repository is single-instance.
+Public deployment targets Hetzner. Keep workstation runs on loopback and follow the repository-root `DEPLOYMENT_TARGET.md` for migration and operator acceptance. The local Ngrok launcher has been removed.
 
 ## Docker deployment
 
@@ -455,7 +426,7 @@ All configuration comes from environment variables; local runs load `.env` throu
 | Variable | Default | Requirement and effect |
 | --- | --- | --- |
 | `APP_ENV` | `development` | Use `production` behind the public HTTPS deployment. Production enables stricter configuration checks. |
-| `HOST` | `127.0.0.1` in development; `0.0.0.0` in production | Listening interface. The ngrok launcher overrides this to loopback. |
+| `HOST` | `127.0.0.1` in development; `0.0.0.0` in production | Listening interface. Workstation runs bind to loopback; the Hetzner reverse proxy provides the public HTTPS boundary. |
 | `PORT` | `8787` | Integer from 1 through 65535. |
 | `BASE_URL` | `http://localhost:8787` | Public origin only: HTTP(S), no credentials/path/query/fragment. HTTPS is mandatory in production. |
 | `DATABASE_PATH` | `./data/booking.sqlite` | SQLite file path, resolved to an absolute path. Parent folders are created automatically. |
@@ -704,14 +675,6 @@ Local deletion removes local bookings, schedules, OAuth rows, OAuth states, and 
 
 Do not create a second manual event. Retry the same browser attempt so its idempotency key is reused. For an old pending record, the operator can choose **Reconcile uncertain bookings**. Reconciliation only looks up the deterministic event ID: a found event becomes confirmed, a definitive 404 releases the reservation as failed, and transient provider errors remain unresolved.
 
-### ngrok fails
-
-- Run `ngrok version` and `ngrok config check`.
-- Confirm the URL is an HTTPS origin with no path/query/fragment.
-- `ERR_NGROK_334` means the endpoint is already active elsewhere.
-- Confirm the exact ngrok URL is registered as the Google OAuth redirect before connecting Google.
-- The launcher reports success only after local and public health checks pass.
-
 ### Docker is unhealthy
 
 - Run `docker compose config` before starting.
@@ -769,7 +732,7 @@ Automated tests use a controlled calendar provider. They do not replace the live
 ├── icons/                    Chrome extension icons
 ├── integrations/hai/        Read-only HAI companion and Compose overlay
 ├── migrations/              Ordered SQLite schema migrations
-├── scripts/                 Setup, doctor, migration, backup, ngrok, support tools
+├── scripts/                 Setup, doctor, migration, backup, support tools
 ├── src/                     Node server, service, policy, database, provider, security
 ├── test/                    Node test suites and fake provider
 ├── content.js               Chrome extension content script
@@ -796,7 +759,7 @@ Generated/runtime paths such as `node_modules/`, `dist/`, `data/`, `backups/`, s
 - Reminder and attendee email delivery depend on Google Calendar and account policy.
 - No creation of Google Appointment Schedule products—only ordinary events.
 - No committed full browser E2E suite and no automated live Google account tests.
-- ngrok availability, Google consent, domain ownership, and public delivery must be accepted in the operator's environment.
+- Hetzner host access, Google consent, domain ownership, and public delivery must be accepted in the operator's environment.
 - The Chrome extension is loaded unpacked; it is not packaged or published in the Chrome Web Store by this repository.
 
 ## Further documentation
