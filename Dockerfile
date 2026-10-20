@@ -1,6 +1,6 @@
 FROM node:26.12.0-alpine AS build
 WORKDIR /app
-RUN npm install --global npm@12.2.0 --no-audit --no-fund
+RUN npm install --global npm@12.2.1 --no-audit --no-fund
 COPY package*.json ./
 RUN npm ci
 COPY . .

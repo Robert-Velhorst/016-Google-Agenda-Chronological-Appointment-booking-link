@@ -13,8 +13,8 @@ jobs:
         with:
           node-version: 26.12.0
           cache: npm
-      - run: npm install --global npm@12.2.0 --no-audit --no-fund
-      - run: test "$(npm --version)" = "12.2.0"
+      - run: npm install --global npm@12.2.1 --no-audit --no-fund
+      - run: test "$(npm --version)" = "12.2.1"
       - run: npm ci
       - run: npm run check
       - run: npm test
