@@ -143,7 +143,7 @@ This is the simplest supported route for a non-technical operator.
 ### Prerequisites
 
 - Windows 11.
-- [Node.js](https://nodejs.org/) 26.12.0 or newer within Node 26, including npm 12.2.0 or newer.
+- [Node.js](https://nodejs.org/) 26.12.0 or newer within Node 26, including npm 12.2.1 or newer.
 - A modern browser.
 - A Google Cloud project and OAuth client for live Calendar operation.
 - a Hetzner host and owned HTTPS domain for public deployment.
@@ -233,8 +233,8 @@ Schedule states are:
 
 ### Requirements
 
-- Node.js 26.12.0 or newer within Node 26. CI uses Node.js 26.12.0 and npm 12.2.0.
-- npm 12.2.0 or newer and Git.
+- Node.js 26.12.0 or newer within Node 26. CI uses Node.js 26.12.0 and npm 12.2.1.
+- npm 12.2.1 or newer and Git.
 - No separate database server: the application uses Node's built-in SQLite interface.
 
 ### Install and run
@@ -720,7 +720,7 @@ Coverage includes:
 - bounded rate-limit memory;
 - extension duration parsing and live DOM updates.
 
-GitHub Actions runs on every push and pull request with Node.js 26.12.0 and npm 12.2.0, and executes clean install, syntax/asset checks, tests, production build, and a moderate-severity dependency audit.
+GitHub Actions runs on every push and pull request with Node.js 26.12.0 and npm 12.2.1, and executes clean install, syntax/asset checks, tests, production build, and a moderate-severity dependency audit.
 
 Automated tests use a controlled calendar provider. They do not replace the live Google acceptance script in [docs/ACCEPTANCE_TESTS.md](docs/ACCEPTANCE_TESTS.md). The repository currently has no committed component-browser or full real-provider E2E suite.
 
