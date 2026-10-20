@@ -19,13 +19,13 @@ Status values are **PASS**, **BLOCKED**, or **NOT APPLICABLE**. A blocked browse
 | HAI read-only proxy with cursor and PII excluded by default | Local service-to-proxy execution on 2026-08-09 | PASS |
 | Current rendered desktop/mobile interaction in requested in-app Browser | Browser webview repeatedly failed to attach | BLOCKED |
 | Docker image/Compose runtime | Shared Docker daemon timed out while unrelated containers were active | BLOCKED |
-| ngrok public health | Account endpoint already active elsewhere (`ERR_NGROK_334`); unrelated tunnel left untouched | BLOCKED |
+| Hetzner public health | Host, owned domain, TLS, and operator acceptance remain external release gates | NOT RUN |
 | Real Google OAuth, FreeBusy, event/reminder delivery, reschedule, and cancel | Requires operator credentials, consent, and a disposable calendar | BLOCKED |
 | SaaS billing, teams, AI decisions, uploads, and application workers | Outside this single-owner product | NOT APPLICABLE |
 
 ## Live acceptance script
 
-1. Configure a disposable Google calendar, web OAuth client, and ngrok/static HTTPS endpoint.
+1. Configure a disposable Google calendar, web OAuth client, and Hetzner HTTPS endpoint.
 2. Run `npm run doctor`, start the app, sign in, connect Google, and activate a schedule.
 3. Book one slot and confirm exactly one event, attendee update, and reminders; retry the same request and confirm no duplicate.
 4. Attempt a buffered competing booking, reschedule, cancel, and verify the event lifecycle in Google.
