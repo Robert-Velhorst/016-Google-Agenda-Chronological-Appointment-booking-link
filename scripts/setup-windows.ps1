@@ -5,7 +5,7 @@ if ($env:OS -ne 'Windows_NT') { throw 'This installer is for Windows 11.' }
 $node = Get-Command node -ErrorAction Stop
 $npm = Get-Command npm.cmd -ErrorAction Stop
 $version = [version]((& $node.Source --version).TrimStart('v'))
-if ($version -lt [version]'26.12.0' -or $version -ge [version]'27.0.0') { throw "Node.js 26.12.0 or newer within Node 26 is required; found $version." }
+if ($version -lt [version]'26.12.1' -or $version -ge [version]'27.0.0') { throw "Node.js 26.12.1 or newer within Node 26 is required; found $version." }
 
 $root = Split-Path -Parent $PSScriptRoot
 $envFile = Join-Path $root '.env'
@@ -36,9 +36,17 @@ if (-not (Test-Path -LiteralPath $envFile)) {
 
 Push-Location $root
 try {
-  & $npm.Source ci
+  & $npm.Source ci --ignore-scripts
+  if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
+  & $npm.Source run build:sqlite
+  if ($LASTEXITCODE -ne 0) { throw 'Current SQLite build failed. Python 3.15.1 and C++ build tools are required.' }
+  & $npm.Source run verify:runtime
+  if ($LASTEXITCODE -ne 0) { throw 'Native runtime qualification failed.' }
   & $npm.Source run build
+  if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed.' }
   & $npm.Source run migrate
+  if ($LASTEXITCODE -ne 0) { throw 'Database migration failed.' }
   & $npm.Source run doctor
+  if ($LASTEXITCODE -ne 0) { throw 'Readiness checks failed.' }
   Write-Host 'Setup complete. Run start-windows.cmd, then open http://localhost:8787.'
 } finally { Pop-Location }

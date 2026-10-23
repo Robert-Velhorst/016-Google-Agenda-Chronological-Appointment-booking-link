@@ -143,7 +143,7 @@ This is the simplest supported route for a non-technical operator.
 ### Prerequisites
 
 - Windows 11.
-- [Node.js](https://nodejs.org/) 26.12.0 or newer within Node 26, including npm 12.2.1 or newer.
+- [Node.js](https://nodejs.org/) 26.12.1 or newer within Node 26, including npm 12.2.1 or newer.
 - A modern browser.
 - A Google Cloud project and OAuth client for live Calendar operation.
 - a Hetzner host and owned HTTPS domain for public deployment.
@@ -161,7 +161,8 @@ The setup script:
 - verifies Windows and the Node.js version;
 - creates `.env` with random `ADMIN_TOKEN`, `ENCRYPTION_KEY`, and `HAI_CONNECTOR_TOKEN` values only when `.env` does not already exist;
 - preserves an existing `.env` unchanged;
-- runs a clean dependency installation;
+- installs dependencies with lifecycle scripts disabled;
+- compiles and verifies checksum-pinned SQLite 3.54.1 using Python 3.15.1 and the local C++ toolchain;
 - builds the React frontend;
 - applies database migrations;
 - runs the environment doctor.
@@ -233,16 +234,19 @@ Schedule states are:
 
 ### Requirements
 
-- Node.js 26.12.0 or newer within Node 26. CI uses Node.js 26.12.0 and npm 12.2.1.
+- Node.js 26.12.1 or newer within Node 26. CI uses Node.js 26.12.1 and npm 12.2.1.
 - npm 12.2.1 or newer and Git.
-- No separate database server: the application uses Node's built-in SQLite interface.
+- No separate database server: the application uses SQLite 3.54.1 through a locally compiled better-sqlite3 13.0.3 addon. Node still embeds SQLite 3.54.0 internally; the application does not use that engine.
+- Python 3.15.1 and a C++ compiler toolchain (Visual Studio Build Tools on Windows; make and g++ on Linux) are required to build the pinned SQLite source.
 
 ### Install and run
 
 ```powershell
 git clone https://github.com/Robert-Velhorst/016-Google-Agenda-Chronological-Appointment-booking-link.git
 cd 016-Google-Agenda-Chronological-Appointment-booking-link
-npm ci
+npm ci --ignore-scripts
+npm run build:sqlite
+npm run verify:runtime
 Copy-Item .env.example .env
 ```
 
@@ -273,7 +277,7 @@ Public deployment targets Hetzner. Keep workstation runs on loopback and follow 
 
 ## Docker deployment
 
-The Docker image uses Node.js 26.12.0 Alpine, builds and tests in a build stage, installs only production dependencies in the runtime stage, and runs as the unprivileged `node` user.
+The Docker image pins Node.js 26.12.1 and Python 3.15.1 build stages by digest. It compiles SQLite 3.54.1, verifies a synthetic upgrade and backup from Node SQLite 3.54.0, and runs tests and the frontend build. The runtime contains production dependencies and the qualified addon, excluding obsolete driver prebuilds and SQLite source. It runs as the unprivileged `node` user.
 
 Create a production `.env` with at least:
 
@@ -657,7 +661,7 @@ Local deletion removes local bookings, schedules, OAuth rows, OAuth states, and 
 
 ### The server will not start
 
-- Run `node --version`; it must be 26.12.0 or newer within Node 26.
+- Run `node --version`; it must be 26.12.1 or newer within Node 26.
 - Run `npm ci`, `npm run build`, `npm run migrate`, and `npm run doctor`.
 - Confirm `.env` exists and `ADMIN_TOKEN` has at least 24 characters.
 - In production, confirm `BASE_URL` uses HTTPS and `ENCRYPTION_KEY` is exactly 64 hexadecimal characters.
@@ -701,7 +705,9 @@ Review the generated JSON before sharing. It contains runtime/configuration flag
 Run the complete local verification set:
 
 ```powershell
-npm ci
+npm ci --ignore-scripts
+npm run build:sqlite
+npm run verify:runtime
 npm run check
 npm test
 npm run build
@@ -720,7 +726,7 @@ Coverage includes:
 - bounded rate-limit memory;
 - extension duration parsing and live DOM updates.
 
-GitHub Actions runs on every push and pull request with Node.js 26.12.0 and npm 12.2.1, and executes clean install, syntax/asset checks, tests, production build, and a moderate-severity dependency audit.
+GitHub Actions runs on Windows and Linux with Node.js 26.12.1, npm 12.2.1 and Python 3.15.1. Each platform compiles SQLite 3.54.1, verifies a synthetic upgrade and backup, and runs syntax/asset checks, tests, the production build and an audit at low severity. A separate job builds the production image and verifies the installed engine and binary hash as UID/GID 1000, with a read-only filesystem and no network. These checks do not migrate an operator database or establish live Google/Hetzner acceptance.
 
 Automated tests use a controlled calendar provider. They do not replace the live Google acceptance script in [docs/ACCEPTANCE_TESTS.md](docs/ACCEPTANCE_TESTS.md). The repository currently has no committed component-browser or full real-provider E2E suite.
 
@@ -782,4 +788,4 @@ Generated/runtime paths such as `node_modules/`, `dist/`, `data/`, `backups/`, s
 
 Use a feature branch, keep production fakes out of runtime code, add regression coverage for behavior changes, and run the full verification set before opening a pull request. Never commit `.env`, OAuth credentials, operator/HAI tokens, requester data, SQLite files, backups, or support bundles.
 
-This repository currently does **not** contain an open-source `LICENSE` file. Do not assume permission to copy, redistribute, or commercially reuse the code; obtain permission from the repository owner first.
+The repository is licensed under AGPL-3.0-only; see [LICENSE](LICENSE). Dependency licenses remain applicable.

@@ -1,0 +1,11 @@
+{
+  "version": "3.54.1",
+  "driverVersion": "13.0.3",
+  "archiveUrl": "https://sqlite.org/2026/sqlite-amalgamation-3540100.zip",
+  "archivePrefix": "sqlite-amalgamation-3540100",
+  "archiveSha3": "92281c86e2957f9b9305890f9ac04204caa7b677cc868dc326d942689df28e30",
+  "sourceSha3": "e2b869d3003b33c942b7dd7063604fbc53553e1b66609570df39b9b7b558ee81",
+  "nodeVersion": "26.12.1",
+  "nodeGypVersion": "13.1.0",
+  "pythonVersion": "3.15.1"
+}
