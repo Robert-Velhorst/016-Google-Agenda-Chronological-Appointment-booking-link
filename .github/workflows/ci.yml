@@ -5,18 +5,68 @@ on:
 permissions:
   contents: read
 jobs:
-  verify:
-    runs-on: ubuntu-latest
+  source:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 26.12.0
+          node-version: 26.12.1
           cache: npm
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: 3.15.1
       - run: npm install --global npm@12.2.1 --no-audit --no-fund
-      - run: test "$(npm --version)" = "12.2.1"
-      - run: npm ci
+      - run: node -e "require('node:assert/strict').equal(require('node:child_process').execSync('npm --version').toString().trim(),'12.2.1')"
+      - run: npm ci --ignore-scripts
+      - run: npm run build:sqlite
+      - run: npm run verify:runtime
       - run: npm run check
       - run: npm test
       - run: npm run build
-      - run: npm audit --audit-level=moderate
+      - run: npm audit --audit-level=low
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: native-runtime-${{ matrix.os }}
+          path: output/*.json
+          if-no-files-found: error
+  installed-runtime:
+    needs: source
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build the production image
+        run: docker build --tag booking-qualified:${{ github.sha }} .
+      - name: Verify the installed native database and runtime without provider access
+        run: docker run --rm --read-only --network none --cap-drop ALL --security-opt no-new-privileges booking-qualified:${{ github.sha }} node scripts/verify-stable-runtime.js --installed
+      - name: Scan complete installed package inventory at all severities
+        run: |
+          mkdir -p output
+          docker image inspect --format '{{.Id}}' booking-qualified:${{ github.sha }} > output/image-id.txt
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD/output:/output" aquasec/trivy:0.76.1 image --scanners vuln --list-all-pkgs --format json --output /output/image-security.json --exit-code 1 booking-qualified:${{ github.sha }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.12.1
+      - name: Require exact image and complete runtime package evidence
+        run: node scripts/verify-image-security.js output/image-security.json output/image-id.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: installed-image-evidence
+          path: output/*
+          if-no-files-found: error
+  verify:
+    if: always()
+    needs: [source, installed-runtime]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require both host platforms and the installed runtime
+        env:
+          SOURCE_RESULT: ${{ needs.source.result }}
+          IMAGE_RESULT: ${{ needs.installed-runtime.result }}
+        run: test "$SOURCE_RESULT" = success && test "$IMAGE_RESULT" = success

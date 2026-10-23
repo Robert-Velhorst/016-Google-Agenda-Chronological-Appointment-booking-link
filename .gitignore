@@ -11,3 +11,6 @@ support-bundles/
 *.sqlite-shm
 *.sqlite-wal
 coverage/
+.build/
+.npm-cache/
+output/

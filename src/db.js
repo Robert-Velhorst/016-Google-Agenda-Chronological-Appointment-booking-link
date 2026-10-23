@@ -2,9 +2,11 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { DatabaseSync } = require('node:sqlite');
+const { getSqliteDriver } = require('./sqlite-runtime');
 
 function openDatabase(config) {
+  // Qualify the actual engine before creating a directory or opening user data.
+  const DatabaseSync = getSqliteDriver();
   fs.mkdirSync(path.dirname(config.databasePath), { recursive: true });
   const db = new DatabaseSync(config.databasePath);
   db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;');

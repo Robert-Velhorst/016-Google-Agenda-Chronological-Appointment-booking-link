@@ -9,7 +9,7 @@ const files = [];
 for (const directory of ['src', 'scripts', 'test']) {
   const full = path.join(root, directory);
   if (!fs.existsSync(full)) continue;
-  for (const entry of fs.readdirSync(full, { withFileTypes: true })) if (entry.isFile() && entry.name.endsWith('.js')) files.push(path.join(full, entry.name));
+  for (const entry of fs.readdirSync(full, { withFileTypes: true })) if (entry.isFile() && /\.(?:js|mjs)$/.test(entry.name)) files.push(path.join(full, entry.name));
 }
 files.push(path.join(root, 'content.js'), path.join(root, 'test-content.js'));
 for (const file of files) {

@@ -12,3 +12,6 @@ work
 *.sqlite
 *.sqlite-*
 npm-debug.log*
+.build
+.npm-cache
+output
