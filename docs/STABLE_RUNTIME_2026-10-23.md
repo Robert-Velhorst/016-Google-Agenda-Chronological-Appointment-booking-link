@@ -12,7 +12,7 @@
 
 ## Verification boundaries
 
-Local clean installation with npm lifecycle scripts disabled passed; npm audit reports zero vulnerabilities. Syntax checks and the seven package-policy regression cases pass. Full application tests and actual native compilation have not yet run locally because available RAM is below the build resource guard.
+Local clean installation with npm lifecycle scripts disabled passed; npm audit reports zero vulnerabilities. Syntax checks and the seven package-policy regression cases pass. After RAM recovered above the build guard, the local native compilation and actual runtime probe passed. The full local application suite passed 41 tests and the content-script checks. Both hosted Windows and Linux builds also compiled the current engine, passed all 41 tests, built the frontend and reported zero dependency vulnerabilities.
 
 The draft CI compiles and tests on Windows and Linux, builds the installed production image, and verifies actual engine/source/binary identity without network, as UID/GID 1000 on a read-only filesystem. The complete all-severity Trivy inventory must match the built image, include Alpine 3.24.3 and all three direct production packages at their exact versions, and contain no reported or modified findings. Raw reports are retained. This is a package vulnerability policy, not proof that every embedded native component is current or secure.
 
@@ -25,3 +25,7 @@ No operator database, OAuth account, deployment, provider configuration or billi
 - https://registry.npmjs.org/better-sqlite3/latest
 - https://registry.npmjs.org/node-gyp/latest
 - https://github.com/aquasecurity/trivy/releases/tag/v0.76.1
+
+## First image scan and follow-up
+
+The first installed-image scan at source head 72ca8eb found 13 vulnerabilities under the unused `/usr/local/lib/node_modules/npm` tree; Alpine packages had zero reported findings. The application and HAI connector launch directly with Node. The follow-up removes package-manager launchers and npm/Yarn dependency trees only from the newly built runtime images, retaining npm in build stages. The installed runtime probe now requires those trees to be absent. The first raw scan is retained as failing evidence; a new full hosted image build/probe/scan must qualify the follow-up. No finding is ignored.

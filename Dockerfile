@@ -22,6 +22,10 @@ COPY --from=build /app/node_modules/better-sqlite3/lib ./node_modules/better-sql
 COPY --from=build /app/node_modules/better-sqlite3/build/Release/better_sqlite3.node ./node_modules/better-sqlite3/build/Release/better_sqlite3.node
 
 FROM node:26.12.1-alpine3.24@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797 AS runtime
+# The application starts directly with node; package managers belong to build
+# stages only. Remove their unused bundled dependency trees from this image.
+RUN rm -rf /usr/local/lib/node_modules/npm /opt/yarn-* \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/yarn /usr/local/bin/yarnpkg
 ENV APP_ENV=production NODE_ENV=production PORT=8787
 WORKDIR /app
 COPY package*.json sqlite-build.json LICENSE ./

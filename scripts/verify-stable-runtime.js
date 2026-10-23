@@ -10,7 +10,12 @@ const pin = require('../sqlite-build.json');
 const installed=process.argv.length===3 && process.argv[2]==='--installed';
 assert.ok(process.argv.length===2 || installed, 'Unexpected arguments');
 assert.equal(process.versions.node, pin.nodeVersion);
-if(installed) { assert.equal(process.platform,'linux'); assert.equal(process.getuid(),1000); assert.equal(process.getgid(),1000); }
+if(installed) {
+  assert.equal(process.platform,'linux'); assert.equal(process.getuid(),1000); assert.equal(process.getgid(),1000);
+  assert.equal(fs.existsSync('/usr/local/lib/node_modules/npm'),false,'Unused npm tree remains in runtime');
+  assert.equal(fs.existsSync('/usr/local/bin/npm'),false,'Unused npm launcher remains in runtime');
+  assert.equal(fs.readdirSync('/opt').some(name=>name.startsWith('yarn-')),false,'Unused Yarn tree remains in runtime');
+}
 const Database = getSqliteDriver();
 const db = new Database(':memory:');
 try {
